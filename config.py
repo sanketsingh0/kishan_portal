@@ -34,6 +34,12 @@ class Config:
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
+    # Keep these small - Refresh the connection before reuse (important for
+    # hosted PostgreSQL such as Supabase where idle connections get dropped).
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+    }
+
     # --- Supabase (Auth); used once the authentication module is implemented ---
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")

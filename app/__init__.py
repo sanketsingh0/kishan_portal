@@ -16,6 +16,11 @@ from flask import Flask
 
 from config import config_map
 from app.extensions import db, migrate, scheduler, socketio
+from app.cli import register_cli
+
+# Imported for its side effect: registers all models on db.metadata so that
+# Alembic/Flask-Migrate and db.create_all() can see them.
+import app.models  # noqa: F401,E402
 
 # Idempotent: no-op if run.py already loaded .env before importing this package.
 load_dotenv()
@@ -55,6 +60,9 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(health_bp)
     app.register_blueprint(main_bp)
 
+    # --- CLI commands (flask seed-demo, ...) -----------------------------------
+    register_cli(app)
+
     # --- Scheduling -------------------------------------------------------------
     # Never start background threads while running the test-suite.
     if not app.config.get("TESTING") and not scheduler.running:
@@ -78,4 +86,12 @@ def _validate_production_config(app: Flask) -> None:
         raise RuntimeError(
             "Production configuration is incomplete. "
             f"Set the following environment variables: {', '.join(missing)}"
+        )
+
+    uri = app.config.get("SQLALCHEMY_DATABASE_URI") or ""
+    if not uri.startswith("postgres"):
+        raise RuntimeError(
+            "Production DATABASE_URL must point to PostgreSQL "
+            "(e.g. postgresql+psycopg://...). Got a non-PostgreSQL URL. "
+            "Use FLASK_ENV=development for the local SQLite database."
         )

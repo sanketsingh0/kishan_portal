@@ -144,9 +144,32 @@ Manage schema with Flask-Migrate:
 
 ```bash
 flask --app run.py db init      # one-time: creates migrations/
-flask --app run.py db migrate -m "message"
+flask --app run.py db migrate -m "phase 1 models"
 flask --app run.py db upgrade
 ```
+
+### Demo seed data
+
+Insert clearly fictional development data (sample centres + crops) with:
+
+```bash
+flask --app run.py seed-demo
+```
+
+The seeder is idempotent - running it repeatedly never duplicates records.
+
+## Database schema (Phase 1)
+
+| Table | Purpose | Key relationships / constraints |
+|---|---|---|
+| `users` | Accounts for FARMER / STAFF / ADMIN. `supabase_user_id` mirrors Supabase Auth. No passwords stored. | role CHECK-constrained, is_active, unique `supabase_user_id` |
+| `farmers` | Minimal farmer profile (name, phone, address fields) | 1:1 `user_id` → users.id (unique), `phone` unique |
+| `staff` | Centre staff profile | 1:1 `user_id` → users.id (unique), optional `centre_id` → centres.id |
+| `centres` | Procurement centres; `average_processing_minutes` feeds later waiting-time estimates | unique `name`, operating hours, daily capacity, is_active |
+| `crops` | Procurable crop catalogue | unique `name`, optional category, is_active |
+
+All tables carry `created_at` / `updated_at` timestamps (UTC).
+Phase 1 only - slots, bookings, queue, procurement and notifications come in later milestones.
 
 ## Configuration
 

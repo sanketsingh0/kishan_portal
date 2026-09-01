@@ -1,12 +1,30 @@
 """Database models package.
 
-Modules will be added here, one per domain, as they are implemented:
+Phase 1 models only (no slots/bookings/queue/notifications yet):
 
-    users, farmers, staff, centres, crops,       # phase 1
-    slots, bookings, queue_entries,              # phase 2
-    procurements, payments,                      # phase 3
-    notifications, push_subscriptions, audit_logs  # phase 4
+    users    - accounts (role: FARMER/STAFF/ADMIN), mirrors Supabase Auth
+    farmers  - farmer profiles, one-to-one with users
+    staff    - centre staff profiles, one-to-one with users
+    centres  - procurement centres
+    crops    - procurable crop catalogue
+
+Importing this package registers all models on `db.metadata`, which is what
+Flask-Migrate (autogenerate), `db.create_all()` and Alembic use.
 """
 
-# Importing models here makes them visible to Flask-Migrate (autogenerate) and
-# to the test fixtures that call db.create_all().
+from app.models.common import TimestampMixin, UserRole, utcnow
+from app.models.user import User
+from app.models.farmer import Farmer
+from app.models.staff import Staff
+from app.models.centre import Centre
+from app.models.crop import Crop
+
+__all__ = [
+    "TimestampMixin",
+    "UserRole",
+    "User",
+    "Farmer",
+    "Staff",
+    "Centre",
+    "Crop",
+]
