@@ -214,4 +214,5 @@ commit `.env`. Key variables:
   Windows).
 - Realtime in production: run under an async-capable server (eventlet /
   gevent) via `SOCKETIO_ASYNC_MODE`.
-- Apply migrations with `flask --app run.py db upgrade`.
+- Apply migrations with `flask --app run.py db upgrade`.#   k i s h a n _ p o r t a l  
+ 
