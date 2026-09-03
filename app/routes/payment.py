@@ -8,7 +8,7 @@ Endpoints:
 """
 
 from flask import Blueprint, jsonify, request, g
-from app.auth.decorators import login_required, role_required, roles_required
+from app.auth.decorators import login_required, role_required, roles_required, staff_centre_required
 from app.models import UserRole, Booking, PaymentStatus
 from app.extensions import db
 from app.services.farmer_service import get_farmer_by_user_id
@@ -68,11 +68,24 @@ def farmer_get_payment(booking_id: int):
 @payment_bp.route("/<int:booking_id>", methods=["GET"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_get_payment(booking_id: int):
-    """View payment details for a booking (STAFF/ADMIN)."""
+    """View payment details for a booking (STAFF/ADMIN).
+
+    STAFF may only access payment for bookings at their assigned centre.
+    """
     booking = db.session.get(Booking, booking_id)
     if not booking:
         return jsonify({"error": "Not Found", "message": f"Booking {booking_id} not found."}), 404
+
+    # Centre isolation: resolve centre from booking -> slot
+    if g.current_user.role == UserRole.STAFF:
+        centre_id = booking.slot.centre_id if booking.slot else None
+        if centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
 
     return jsonify({"payment": _format_payment_response(booking.id, booking.payment)}), 200
 
@@ -80,11 +93,27 @@ def staff_get_payment(booking_id: int):
 @payment_bp.route("/<int:booking_id>", methods=["POST"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_create_payment(booking_id: int):
-    """Create payment status record for a booking (STAFF/ADMIN)."""
+    """Create payment status record for a booking (STAFF/ADMIN).
+
+    STAFF may only create payment records for bookings at their assigned centre.
+    """
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
+
+    # Centre isolation: resolve centre from booking -> slot
+    if g.current_user.role == UserRole.STAFF:
+        booking = db.session.get(Booking, booking_id)
+        if not booking:
+            return jsonify({"error": "Not Found", "message": f"Booking {booking_id} not found."}), 404
+        centre_id = booking.slot.centre_id if booking.slot else None
+        if centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
 
     try:
         payment = create_payment(booking_id, data)
@@ -106,11 +135,27 @@ def staff_create_payment(booking_id: int):
 @payment_bp.route("/<int:booking_id>", methods=["PUT"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_update_payment(booking_id: int):
-    """Update payment status record for a booking (STAFF/ADMIN)."""
+    """Update payment status record for a booking (STAFF/ADMIN).
+
+    STAFF may only update payment records for bookings at their assigned centre.
+    """
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
+
+    # Centre isolation: resolve centre from booking -> slot
+    if g.current_user.role == UserRole.STAFF:
+        booking = db.session.get(Booking, booking_id)
+        if not booking:
+            return jsonify({"error": "Not Found", "message": f"Booking {booking_id} not found."}), 404
+        centre_id = booking.slot.centre_id if booking.slot else None
+        if centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
 
     try:
         payment = update_payment(booking_id, data)

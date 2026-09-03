@@ -8,7 +8,7 @@ Endpoints:
 from datetime import datetime, date
 from flask import Blueprint, jsonify, request, g
 
-from app.auth.decorators import login_required, role_required, roles_required
+from app.auth.decorators import login_required, role_required, roles_required, staff_centre_required
 from app.models import UserRole
 from app.services.queue_service import get_booking_queue_status, get_centre_queue
 
@@ -35,8 +35,11 @@ def get_my_queue_status(booking_id: int):
 @queue_bp.route("/centre/<int:centre_id>", methods=["GET"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def get_centre_queue_status(centre_id: int):
     """Retrieve ordered active queue for a procurement centre (STAFF or ADMIN only).
+
+    STAFF may only view the queue for their assigned centre.
 
     Query Parameters:
         date: Optional YYYY-MM-DD date string (defaults to today)
@@ -44,8 +47,16 @@ def get_centre_queue_status(centre_id: int):
     Returns:
         200 OK: Centre queue dictionary
         400 Bad Request: Invalid date format
+        403 Forbidden: staff accessing another centre
         404 Not Found: Centre not found
     """
+    # Centre isolation: STAFF may only view their own centre's queue
+    if g.current_user.role == UserRole.STAFF and centre_id != g.current_staff.centre_id:
+        return jsonify({
+            "error": "Forbidden",
+            "message": "Access denied for this centre.",
+        }), 403
+
     date_str = request.args.get("date")
     target_date = None
 

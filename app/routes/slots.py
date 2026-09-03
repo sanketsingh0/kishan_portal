@@ -10,7 +10,7 @@ Endpoints:
 
 from flask import Blueprint, jsonify, request, g
 
-from app.auth.decorators import login_required, role_required, roles_required
+from app.auth.decorators import login_required, role_required, roles_required, staff_centre_required
 from app.models import UserRole, BookingStatus
 from app.services.slot_service import (
     get_slots,
@@ -107,20 +107,33 @@ def get_slot(slot_id: int):
 @slots_bp.route("", methods=["POST"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def add_slot():
     """Create a new procurement slot (STAFF or ADMIN only).
 
     Request JSON:
         { centre_id, crop_id, slot_date, start_time, end_time, capacity, status }
 
+    STAFF may only create slots for their assigned centre.
+
     Returns:
         201 Created: { message, slot }
         400 Bad Request: validation error
+        403 Forbidden: staff accessing another centre
         409 Conflict: duplicate slot, overlap, or daily capacity exceeded
     """
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
+
+    # Centre isolation: STAFF may only create slots for their own centre
+    if g.current_user.role == UserRole.STAFF:
+        target_centre_id = data.get("centre_id")
+        if target_centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
 
     try:
         slot = create_slot(data)
@@ -140,18 +153,39 @@ def add_slot():
 @slots_bp.route("/<int:slot_id>", methods=["PUT"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def edit_slot(slot_id: int):
     """Update an existing procurement slot (STAFF or ADMIN only).
+
+    STAFF may only update slots belonging to their assigned centre.
 
     Returns:
         200 OK: { message, slot }
         400 Bad Request: validation error
+        403 Forbidden: staff accessing another centre
         404 Not Found: slot missing
         409 Conflict: duplicate slot, overlap, or capacity exceeded
     """
     data = request.get_json(silent=True)
     if data is None or not isinstance(data, dict):
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
+
+    # Centre isolation: load slot and verify ownership
+    if g.current_user.role == UserRole.STAFF:
+        existing = get_slot_by_id(slot_id, is_admin_or_staff=True)
+        if not existing:
+            return jsonify({"error": "Not Found", "message": "Slot not found."}), 404
+        if existing.centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+        # Prevent staff from moving a slot to another centre
+        if "centre_id" in data and data["centre_id"] != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
 
     try:
         updated = update_slot(slot_id, data)
@@ -172,13 +206,28 @@ def edit_slot(slot_id: int):
 @slots_bp.route("/<int:slot_id>", methods=["DELETE"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def remove_slot(slot_id: int):
     """Soft cancel a slot by setting status = CANCELLED (STAFF or ADMIN only).
 
+    STAFF may only cancel slots belonging to their assigned centre.
+
     Returns:
         200 OK: { message, slot }
+        403 Forbidden: staff accessing another centre
         404 Not Found: slot missing
     """
+    # Centre isolation: load slot and verify ownership
+    if g.current_user.role == UserRole.STAFF:
+        existing = get_slot_by_id(slot_id, is_admin_or_staff=True)
+        if not existing:
+            return jsonify({"error": "Not Found", "message": "Slot not found."}), 404
+        if existing.centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+
     try:
         cancelled = cancel_slot(slot_id)
     except SlotValidationError as exc:

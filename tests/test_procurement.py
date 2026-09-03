@@ -45,6 +45,10 @@ def test_setup(app):
         db.session.add_all([f1, f2, s, c, cr])
         db.session.commit()
 
+        # Assign staff to centre
+        s.centre_id = c.id
+        db.session.commit()
+
         slot = Slot(
             centre_id=c.id,
             crop_id=cr.id,

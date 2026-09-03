@@ -14,7 +14,7 @@ from datetime import date, time, timedelta
 from unittest.mock import MagicMock, patch
 
 from app.extensions import db
-from app.models import User, Centre, Crop, Slot, SlotStatus, UserRole
+from app.models import User, Centre, Crop, Slot, SlotStatus, UserRole, Staff
 
 
 def make_mock_user(user_id="user-uuid-1", email="user@example.com"):
@@ -38,10 +38,14 @@ def farmer_user(app):
 
 
 @pytest.fixture
-def staff_user(app):
+def staff_user(app, base_data):
     with app.app_context():
         u = User(supabase_user_id="staff-uuid-1", role=UserRole.STAFF, is_active=True)
         db.session.add(u)
+        db.session.flush()
+        s = Staff(user_id=u.id, name="Staff User", phone="9000000001",
+                  centre_id=base_data["c_active"].id)
+        db.session.add(s)
         db.session.commit()
         yield u
 

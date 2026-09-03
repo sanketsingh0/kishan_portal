@@ -108,6 +108,11 @@
           <i class="fa-solid fa-clock-rotate-left me-2"></i>Delay Management
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="staff-tab" data-bs-toggle="tab" data-bs-target="#staff-pane" type="button" role="tab" onclick="loadStaff()">
+          <i class="fa-solid fa-users-gear me-2"></i>Staff Management
+        </button>
+      </li>
     </ul>
 
     <div class="tab-content" id="adminTabContent">
@@ -198,6 +203,36 @@
               </thead>
               <tbody id="delaysTableBody">
                 <tr><td colspan="8" class="text-center text-muted py-4">Loading delays...</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- STAFF TAB -->
+      <div class="tab-pane fade" id="staff-pane" role="tabpanel">
+        <div class="card card-custom p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-dark mb-0">Staff Management</h5>
+            <button class="btn btn-kp-primary" onclick="openCreateStaffModal()">
+              <i class="fa-solid fa-plus me-2"></i>Add New Staff
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>ID</th>
+                  <th>Name</th>
+                  <th>Phone</th>
+                  <th>Centre</th>
+                  <th>Status</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="staffTableBody">
+                <tr><td colspan="6" class="text-center text-muted py-4">Loading staff...</td></tr>
               </tbody>
             </table>
           </div>
@@ -660,6 +695,165 @@
       loadCentres();
       loadCrops();
     });
+
+    // Load Staff
+    async function loadStaff() {
+      const tbody = document.getElementById("staffTableBody");
+      try {
+        const res = await window.KP.authFetch("/api/admin/staff");
+        const data = await res.json();
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">${data.message || "Failed to load staff"}</td></tr>`;
+          return;
+        }
+        if (!data.staff || data.staff.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-4">No staff found.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = data.staff.map(s => `
+          <tr>
+            <td>${s.id}</td>
+            <td class="fw-bold">${s.name}</td>
+            <td>${s.phone || '<span class="text-muted">--</span>'}</td>
+            <td>${s.centre_name ? s.centre_name : '<span class="text-muted">Unassigned</span>'}</td>
+            <td>
+              ${s.is_active
+                ? '<span class="badge bg-success">Active</span>'
+                : '<span class="badge bg-secondary">Inactive</span>'}
+            </td>
+            <td class="text-end">
+              <button class="btn btn-sm btn-outline-primary me-1" onclick='openEditStaffModal(${JSON.stringify(s)})'>
+                <i class="fa-solid fa-pen"></i>
+              </button>
+              ${s.is_active ? `
+                <button class="btn btn-sm btn-outline-danger" onclick="deactivateStaff(${s.id})">
+                  <i class="fa-solid fa-ban"></i>
+                </button>
+              ` : `
+                <button class="btn btn-sm btn-outline-success" onclick="activateStaff(${s.id})">
+                  <i class="fa-solid fa-check"></i>
+                </button>
+              `}
+            </td>
+          </tr>
+        `).join("");
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-4">Error loading staff</td></tr>`;
+      }
+    }
+
+    function openCreateStaffModal() {
+      document.getElementById("staffModalTitle").innerText = "Add Staff";
+      document.getElementById("staffForm").reset();
+      document.getElementById("staffModalAlert").classList.add("d-none");
+      delete document.getElementById("staffForm").dataset.editId;
+      populateStaffCentreSelect();
+      new bootstrap.Modal(document.getElementById("staffModal")).show();
+    }
+
+    function openEditStaffModal(s) {
+      document.getElementById("staffModalTitle").innerText = "Edit Staff";
+      document.getElementById("staffForm").reset();
+      document.getElementById("staffModalAlert").classList.add("d-none");
+      document.getElementById("staffName").value = s.name || "";
+      document.getElementById("staffPhone").value = s.phone || "";
+      populateStaffCentreSelect(s.centre_id);
+      document.getElementById("staffForm").dataset.editId = s.id;
+      new bootstrap.Modal(document.getElementById("staffModal")).show();
+    }
+
+    async function populateStaffCentreSelect(selectedId = null) {
+      const select = document.getElementById("staffCentreId");
+      select.innerHTML = '<option value="">-- No Centre Assigned --</option>';
+      try {
+        const res = await window.KP.authFetch("/api/centres?all=true");
+        const data = await res.json();
+        if (data.centres) {
+          data.centres.forEach(c => {
+            const opt = document.createElement("option");
+            opt.value = c.id;
+            opt.textContent = `${c.name} (${c.location})`;
+            if (selectedId && c.id === selectedId) opt.selected = true;
+            select.appendChild(opt);
+          });
+        }
+      } catch (e) {
+        // ignore
+      }
+    }
+
+    }
+
+    document.getElementById("staffForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const editId = this.dataset.editId;
+      const payload = {
+        name: document.getElementById("staffName").value.trim(),
+        phone: document.getElementById("staffPhone").value.trim() || null,
+        centre_id: document.getElementById("staffCentreId").value ? parseInt(document.getElementById("staffCentreId").value) : null,
+      };
+
+      if (editId) {
+        const res = await window.KP.authFetch(`/api/admin/staff/${editId}`, {
+          method: "PUT",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const alert = document.getElementById("staffModalAlert");
+          alert.innerText = data.messages ? data.messages.join(", ") : (data.message || "Failed to update staff");
+          alert.classList.remove("d-none");
+          return;
+        }
+        delete this.dataset.editId;
+        showAlert("Staff updated successfully!");
+      } else {
+        payload.email = document.getElementById("staffEmail").value.trim();
+        const pwd = document.getElementById("staffPassword").value.trim();
+        if (pwd) payload.password = pwd;
+        const res = await window.KP.authFetch("/api/admin/staff", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload),
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          const alert = document.getElementById("staffModalAlert");
+          alert.innerText = data.messages ? data.messages.join(", ") : (data.message || "Failed to create staff");
+          alert.classList.remove("d-none");
+          return;
+        }
+        showAlert("Staff created successfully!");
+      }
+
+      bootstrap.Modal.getInstance(document.getElementById("staffModal")).hide();
+      loadStaff();
+    });
+
+    async function deactivateStaff(id) {
+      if (!confirm("Deactivate this staff member?")) return;
+      const res = await window.KP.authFetch(`/api/admin/staff/${id}`, { method: "DELETE" });
+      if (res.ok) {
+        showAlert("Staff deactivated.", "warning");
+        loadStaff();
+      }
+    }
+
+    async function activateStaff(id) {
+      if (!confirm("Activate this staff member?")) return;
+      const res = await window.KP.authFetch(`/api/admin/staff/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ is_active: true }),
+      });
+      if (res.ok) {
+        showAlert("Staff activated.", "success");
+        loadStaff();
+      }
+    }
+
+    }
   </script>
 
   <!-- Delay Modal -->
@@ -698,6 +892,51 @@
           <div class="modal-footer border-0">
             <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
             <button type="submit" class="btn btn-kp-primary">Save Delay</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff Modal -->
+  <div class="modal fade" id="staffModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content border-0 shadow rounded-4">
+        <form id="staffForm">
+          <div class="modal-header bg-primary text-white border-0">
+            <h5 class="modal-title fw-bold" id="staffModalTitle"><i class="fa-solid fa-users-gear me-2"></i>Add Staff</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div id="staffModalAlert" class="alert alert-danger d-none"></div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Full Name *</label>
+              <input type="text" id="staffName" class="form-control" required minlength="2" maxlength="120">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Email *</label>
+              <input type="email" id="staffEmail" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Phone</label>
+              <input type="tel" id="staffPhone" class="form-control" maxlength="20">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Assign Centre</label>
+              <select id="staffCentreId" class="form-select">
+                <option value="">-- No Centre Assigned --</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Temporary Password</label>
+              <input type="text" id="staffPassword" class="form-control" placeholder="Auto-generated if empty">
+              <small class="text-muted">Staff can change password after first login.</small>
+            </div>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary">Save Staff</button>
           </div>
         </form>
       </div>

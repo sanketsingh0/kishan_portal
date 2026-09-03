@@ -46,6 +46,10 @@ def test_setup(app):
         db.session.add_all([c1, c2])
         db.session.commit()
 
+        # Assign staff to centre 1
+        st.centre_id = c1.id
+        db.session.commit()
+
         # Crop
         crop = Crop(name="Wheat Premium", category="Cereals", is_active=True)
         db.session.add(crop)
@@ -194,7 +198,7 @@ def test_invalid_date_rejected(client, test_setup):
 def test_invalid_centre_rejected(client, test_setup):
     """12. Invalid centre rejected."""
     payload = {"centre_id": 99999, "delay_date": test_setup["target_date"], "delay_minutes": 30}
-    res = make_auth_call(client, "POST", "/api/delays", test_setup["staff_sub_id"], payload)
+    res = make_auth_call(client, "POST", "/api/delays", test_setup["admin_sub_id"], payload)
     assert res.status_code == 400
 
 
@@ -209,7 +213,7 @@ def test_slot_centre_mismatch_rejected(client, test_setup):
     """14. Slot belonging to another centre rejected."""
     # Slot 1 belongs to centre 1; try creating delay for centre 2 with slot 1
     payload = {"centre_id": test_setup["centre2_id"], "slot_id": test_setup["slot1_id"], "delay_date": test_setup["target_date"], "delay_minutes": 30}
-    res = make_auth_call(client, "POST", "/api/delays", test_setup["staff_sub_id"], payload)
+    res = make_auth_call(client, "POST", "/api/delays", test_setup["admin_sub_id"], payload)
     assert res.status_code == 400
 
 
@@ -318,7 +322,7 @@ def test_resolved_and_cancelled_delays_contribute_zero(client, test_setup):
 def test_date_and_centre_isolation(client, test_setup):
     """26 & 27. Delay from another centre or date does not affect queue."""
     # Delay for centre 2
-    make_auth_call(client, "POST", "/api/delays", test_setup["staff_sub_id"], {
+    make_auth_call(client, "POST", "/api/delays", test_setup["admin_sub_id"], {
         "centre_id": test_setup["centre2_id"], "delay_date": test_setup["target_date"], "delay_minutes": 40
     })
     # Delay for centre 1 on another date

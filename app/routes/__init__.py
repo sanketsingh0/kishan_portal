@@ -25,6 +25,7 @@ from app.routes.payment import payment_bp
 from app.routes.delays import delays_bp
 from app.routes.notifications import notifications_bp
 from app.routes.admin import admin_bp
+from app.routes.staff import staff_bp
 
 __all__ = [
     "health_bp",
@@ -41,4 +42,5 @@ __all__ = [
     "delays_bp",
     "notifications_bp",
     "admin_bp",
+    "staff_bp",
 ]

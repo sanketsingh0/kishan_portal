@@ -162,3 +162,101 @@ def roles_required(*allowed_roles):
         return decorated
 
     return decorator
+
+
+def _get_current_staff():
+    """Load the Staff profile for the currently authenticated user.
+
+    Returns the Staff object, or None if the user has no staff profile.
+    Expects g.current_user to be set (login_required must run first).
+    """
+    from app.models import Staff
+    if not hasattr(g, "current_user") or g.current_user is None:
+        return None
+    return Staff.query.filter_by(user_id=g.current_user.id).first()
+
+
+def verify_staff_centre_access(staff, target_centre_id):
+    """Verify a staff member is allowed to operate on the given centre.
+
+    Args:
+        staff: Staff instance (may be None).
+        target_centre_id: The centre ID being accessed.
+
+    Returns:
+        (True, None) on success, or (False, (json_response, status_code)) on failure.
+    """
+    if staff is None:
+        return False, ({
+            "error": "Forbidden",
+            "message": "No staff profile found.",
+        }, 403)
+    if staff.centre_id is None:
+        return False, ({
+            "error": "Forbidden",
+            "message": (
+                "No procurement centre has been assigned to your account. "
+                "Please contact the administrator."
+            ),
+        }, 403)
+    if target_centre_id != staff.centre_id:
+        return False, ({
+            "error": "Forbidden",
+            "message": "Access denied for this centre.",
+        }, 403)
+    return True, None
+
+
+def staff_centre_required(f):
+    """Decorator enforcing centre isolation for STAFF users.
+
+    Must be used after @login_required and the appropriate role decorator
+    (@roles_required with STAFF/ADMIN, or @role_required).
+
+    - ADMIN: bypasses centre isolation entirely.
+    - STAFF without a Staff record: 403.
+    - STAFF with centre_id=None: 403 with helpful message.
+    - STAFF with a centre: attaches g.current_staff so the route can call
+      verify_staff_centre_access() against the target centre.
+
+    Usage:
+        @login_required
+        @roles_required(UserRole.STAFF, UserRole.ADMIN)
+        @staff_centre_required
+        def my_route(centre_id):
+            staff = g.current_staff  # None for ADMIN
+            ...
+    """
+
+    @wraps(f)
+    def decorated(*args, **kwargs):
+        if not hasattr(g, "current_user") or g.current_user is None:
+            return jsonify({
+                "error": "Authentication required",
+                "message": "Login required for this resource.",
+            }), 401
+
+        if g.current_user.role == UserRole.ADMIN:
+            g.current_staff = None
+            return f(*args, **kwargs)
+
+        staff = _get_current_staff()
+        if staff is None:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "No staff profile found.",
+            }), 403
+
+        if staff.centre_id is None:
+            return jsonify({
+                "error": "Forbidden",
+                "message": (
+                    "No procurement centre has been assigned to your account. "
+                    "Please contact the administrator."
+                ),
+            }), 403
+
+        g.current_staff = staff
+        return f(*args, **kwargs)
+
+    return decorated

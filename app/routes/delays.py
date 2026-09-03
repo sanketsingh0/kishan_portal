@@ -7,7 +7,7 @@ procurement delays and their impact on queue waiting times.
 from flask import Blueprint, request, jsonify, g
 from app.extensions import db
 from app.models import UserRole, Booking, Delay
-from app.auth.decorators import login_required, role_required, roles_required
+from app.auth.decorators import login_required, role_required, roles_required, staff_centre_required
 from app.services.farmer_service import get_farmer_by_user_id
 from app.services.queue_service import get_booking_queue_status
 from app.services.delay_service import (
@@ -46,8 +46,19 @@ def _format_delay_response(delay: Delay) -> dict:
 @delays_bp.route("", methods=["POST"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_create_delay():
     data = request.get_json(silent=True) or {}
+
+    # Centre isolation: STAFF may only create delays for their own centre
+    if g.current_user.role == UserRole.STAFF:
+        target_centre_id = data.get("centre_id")
+        if target_centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+
     try:
         delay = create_delay(data, g.current_user.id)
         return jsonify({
@@ -68,11 +79,22 @@ def staff_create_delay():
 @delays_bp.route("", methods=["GET"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_get_delays():
     centre_id = request.args.get("centre_id", type=int)
     slot_id = request.args.get("slot_id", type=int)
     date_val = request.args.get("date")
     status = request.args.get("status")
+
+    # Centre isolation: STAFF may only view delays for their own centre
+    if g.current_user.role == UserRole.STAFF:
+        if centre_id is not None and centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+        # Force filter to staff's centre
+        centre_id = g.current_staff.centre_id
 
     try:
         delays = get_delays(centre_id=centre_id, slot_id=slot_id, delay_date=date_val, status=status)
@@ -120,10 +142,18 @@ def farmer_get_booking_delays(booking_id: int):
 @delays_bp.route("/<int:delay_id>", methods=["GET"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_get_delay(delay_id: int):
     delay = get_delay_by_id(delay_id)
     if not delay:
         return jsonify({"error": "Not Found", "message": f"Delay {delay_id} not found."}), 404
+
+    # Centre isolation: STAFF may only view delays for their own centre
+    if g.current_user.role == UserRole.STAFF and delay.centre_id != g.current_staff.centre_id:
+        return jsonify({
+            "error": "Forbidden",
+            "message": "Access denied for this centre.",
+        }), 403
 
     return jsonify({"delay": _format_delay_response(delay)}), 200
 
@@ -132,7 +162,19 @@ def staff_get_delay(delay_id: int):
 @delays_bp.route("/<int:delay_id>", methods=["PUT"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_update_delay(delay_id: int):
+    # Centre isolation: load delay and verify ownership
+    if g.current_user.role == UserRole.STAFF:
+        existing = get_delay_by_id(delay_id)
+        if not existing:
+            return jsonify({"error": "Not Found", "message": f"Delay {delay_id} not found."}), 404
+        if existing.centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+
     data = request.get_json(silent=True) or {}
     try:
         delay = update_delay(delay_id, data)
@@ -156,7 +198,19 @@ def staff_update_delay(delay_id: int):
 @delays_bp.route("/<int:delay_id>", methods=["DELETE"])
 @login_required
 @roles_required(UserRole.STAFF, UserRole.ADMIN)
+@staff_centre_required
 def staff_cancel_delay(delay_id: int):
+    # Centre isolation: load delay and verify ownership
+    if g.current_user.role == UserRole.STAFF:
+        existing = get_delay_by_id(delay_id)
+        if not existing:
+            return jsonify({"error": "Not Found", "message": f"Delay {delay_id} not found."}), 404
+        if existing.centre_id != g.current_staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+
     try:
         delay = cancel_delay(delay_id)
         return jsonify({
