@@ -196,6 +196,9 @@ def create_booking(user_id: int, slot_id: int) -> Booking:
     # Emit realtime queue update post-commit
     try:
         from app.queue.events import emit_queue_update
+        from app.services.notification_service import create_notification
+        from app.models import NotificationType
+
         if slot and slot.centre_id and slot.slot_date:
             emit_queue_update(
                 centre_id=slot.centre_id,
@@ -203,6 +206,14 @@ def create_booking(user_id: int, slot_id: int) -> Booking:
                 booking_id=booking.id,
                 reason="BOOKING_CREATED"
             )
+
+        create_notification(
+            user_id=farmer.user_id,
+            notification_type=NotificationType.BOOKING_CONFIRMED,
+            title="Booking Confirmed",
+            message=f"Your procurement booking has been confirmed. Token: {token_number}.",
+            booking_id=booking.id,
+        )
     except Exception:
         pass
 
@@ -260,12 +271,24 @@ def cancel_booking(booking_id: int, user_id: int, is_staff_or_admin: bool = Fals
     # Emit realtime queue update post-commit
     try:
         from app.queue.events import emit_queue_update
+        from app.services.notification_service import create_notification
+        from app.models import NotificationType
+
         if booking.slot and booking.slot.centre_id and booking.slot.slot_date:
             emit_queue_update(
                 centre_id=booking.slot.centre_id,
                 slot_date=booking.slot.slot_date,
                 booking_id=booking.id,
                 reason="BOOKING_CANCELLED"
+            )
+
+        if booking.farmer and booking.farmer.user_id:
+            create_notification(
+                user_id=booking.farmer.user_id,
+                notification_type=NotificationType.BOOKING_CANCELLED,
+                title="Booking Cancelled",
+                message=f"Your booking {booking.token_number or ''} has been cancelled.",
+                booking_id=booking.id,
             )
     except Exception:
         pass

@@ -376,8 +376,9 @@ def test_realtime_delay_events_post_commit(client, test_setup):
         res = make_auth_call(client, "POST", "/api/delays", test_setup["staff_sub_id"], payload)
         assert res.status_code == 201
 
-        mock_emit.assert_called_once()
-        args, kwargs = mock_emit.call_args
+        delay_calls = [c for c in mock_emit.call_args_list if c[0][0] == "delay_updated"]
+        assert len(delay_calls) == 1
+        args, kwargs = delay_calls[0]
         assert args[0] == "delay_updated"
         event_payload = args[1]
         assert event_payload["centre_id"] == test_setup["centre1_id"]

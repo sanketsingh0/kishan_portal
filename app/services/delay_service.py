@@ -100,6 +100,38 @@ def calculate_active_delay_minutes(centre_id: int, delay_date: date, slot_id: in
     return sum(d.delay_minutes for d in active_delays)
 
 
+def _notify_affected_farmers_for_delay(centre_id: int, delay_date, slot_id: int | None = None):
+    """Notify farmers with active bookings affected by a procurement delay."""
+    try:
+        from app.models import Booking, BookingStatus, Slot
+        from app.services.notification_service import create_notification
+        from app.models import NotificationType
+
+        query = Booking.query.join(Slot).filter(
+            Slot.centre_id == centre_id,
+            Slot.slot_date == delay_date,
+            Booking.status.in_(BookingStatus.active_statuses),
+        )
+        if slot_id is not None:
+            query = query.filter(Slot.id == slot_id)
+
+        affected_bookings = query.all()
+        notified_users = set()
+
+        for b in affected_bookings:
+            if b.farmer and b.farmer.user_id and b.farmer.user_id not in notified_users:
+                notified_users.add(b.farmer.user_id)
+                create_notification(
+                    user_id=b.farmer.user_id,
+                    notification_type=NotificationType.DELAY_UPDATE,
+                    title="Procurement Delay Updated",
+                    message="A delay has affected today's procurement schedule. Your estimated wait time has been updated.",
+                    booking_id=b.id,
+                )
+    except Exception:
+        pass
+
+
 def create_delay(data: dict, current_user_id: int) -> Delay:
     """Create a new delay record (STAFF/ADMIN)."""
     if not isinstance(data, dict):
@@ -206,6 +238,7 @@ def create_delay(data: dict, current_user_id: int) -> Delay:
 
     # Emit Socket.IO event post-commit
     emit_delay_update(centre_id, delay_date, reason="DELAY_CREATED")
+    _notify_affected_farmers_for_delay(centre_id, delay_date, slot_id)
 
     return delay
 
@@ -269,6 +302,7 @@ def update_delay(delay_id: int, data: dict) -> Delay:
 
     # Emit Socket.IO event post-commit
     emit_delay_update(delay.centre_id, delay.delay_date, reason="DELAY_UPDATED")
+    _notify_affected_farmers_for_delay(delay.centre_id, delay.delay_date, delay.slot_id)
 
     return delay
 
@@ -280,14 +314,5 @@ def cancel_delay(delay_id: int) -> Delay:
         raise DelayNotFoundError(f"Delay {delay_id} not found.")
 
     delay.status = DelayStatus.CANCELLED
-
-    try:
-        db.session.commit()
-    except Exception as exc:
-        db.session.rollback()
-        raise DelayError(f"Database error while cancelling delay: {exc}")
-
-    # Emit Socket.IO event post-commit
-    emit_delay_update(delay.centre_id, delay.delay_date, reason="DELAY_CANCELLED")
 
     return delay

@@ -115,6 +115,30 @@
         <span>KisanProcure</span>
       </a>
       <div class="d-flex align-items-center gap-3">
+        <!-- Notification Dropdown -->
+        <div class="dropdown">
+          <button class="btn btn-outline-light btn-sm rounded-circle position-relative p-2" type="button" id="notifDropdownBtn" data-bs-toggle="dropdown" aria-expanded="false" title="Notifications">
+            <i class="fa-solid fa-bell"></i>
+            <span id="notifBadge" class="position-absolute top-0 start-100 translate-middle badge rounded-pill bg-danger d-none">
+              0
+            </span>
+          </button>
+          <div class="dropdown-menu dropdown-menu-end shadow-lg p-0" aria-labelledby="notifDropdownBtn" style="width: 320px; max-height: 420px; overflow-y: auto;">
+            <div class="p-3 border-bottom d-flex justify-content-between align-items-center bg-light">
+              <h6 class="fw-bold mb-0 text-success"><i class="fa-solid fa-bell me-1"></i> Notifications</h6>
+              <button class="btn btn-link text-decoration-none btn-sm p-0 fw-bold" onclick="markAllNotificationsReadAction()">Mark all read</button>
+            </div>
+            <div id="notifListContainer" class="p-2">
+              <div class="text-center text-muted py-3">Loading notifications...</div>
+            </div>
+            <div class="p-2 border-top bg-light text-center">
+              <button id="enablePushBtn" class="btn btn-sm btn-outline-success rounded-pill px-3" onclick="togglePushNotifications()">
+                <i class="fa-solid fa-mobile-screen me-1"></i> Enable Push Notifications
+              </button>
+            </div>
+          </div>
+        </div>
+
         <span class="badge badge-status bg-light text-dark fs-6 d-none d-sm-inline-block">
           <i class="fa-solid fa-user-check me-1 text-success"></i> Farmer Portal
         </span>
@@ -796,6 +820,11 @@
           loadMyBookings();
         });
 
+        queueSocket.on("notification_created", (data) => {
+          console.log("Realtime notification_created event received:", data);
+          loadNotifications();
+        });
+
         queueSocket.on("disconnect", () => {
           console.log("Disconnected from /queue socket namespace.");
         });
@@ -804,6 +833,103 @@
           queueSocket.emit("subscribe_queue", { booking_id: id, token: authToken });
         });
       }
+    }
+
+    // Notification UI & API Functions
+    async function loadNotifications() {
+      const token = getAuthToken();
+      if (!token) return;
+
+      try {
+        const res = await fetch("/api/notifications?limit=15", {
+          headers: { "Authorization": `Bearer ${token}` }
+        });
+        if (!res.ok) return;
+
+        const data = await res.json();
+        const badge = document.getElementById("notifBadge");
+        const container = document.getElementById("notifListContainer");
+
+        if (data.unread_count > 0) {
+          badge.textContent = data.unread_count > 99 ? "99+" : data.unread_count;
+          badge.classList.remove("d-none");
+        } else {
+          badge.classList.add("d-none");
+        }
+
+        if (!data.notifications || data.notifications.length === 0) {
+          container.innerHTML = `<div class="text-center text-muted py-4 small">No notifications yet.</div>`;
+          return;
+        }
+
+        container.innerHTML = data.notifications.map(n => `
+          <div class="p-2 mb-1 rounded border-bottom ${n.is_read ? 'bg-white text-muted' : 'bg-light border-start border-4 border-success'}" style="font-size: 0.88rem;">
+            <div class="d-flex justify-content-between align-items-start mb-1">
+              <strong class="${n.is_read ? 'text-dark' : 'text-success'}">${escapeHtml(n.title)}</strong>
+              ${!n.is_read ? `<button class="btn btn-sm btn-link p-0 text-decoration-none ms-2" title="Mark read" onclick="markNotificationReadAction(${n.id})"><i class="fa-solid fa-check text-muted"></i></button>` : ''}
+            </div>
+            <div class="text-break mb-1">${escapeHtml(n.message)}</div>
+            <div class="text-muted" style="font-size: 0.75rem;">${n.created_at ? new Date(n.created_at).toLocaleString() : ''}</div>
+          </div>
+        `).join("");
+
+      } catch (err) {
+        console.error("Error loading notifications:", err);
+      }
+    }
+
+    async function markNotificationReadAction(notifId) {
+      const token = getAuthToken();
+      try {
+        const res = await fetch(`/api/notifications/${notifId}/read`, {
+          method: "PUT",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          loadNotifications();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function markAllNotificationsReadAction() {
+      const token = getAuthToken();
+      try {
+        const res = await fetch("/api/notifications/read-all", {
+          method: "PUT",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        if (res.ok) {
+          loadNotifications();
+        }
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    async function togglePushNotifications() {
+      if (!("Notification" in window)) {
+        showAlert("Browser push notifications are not supported by your browser.", "warning");
+        return;
+      }
+
+      const permission = await Notification.requestPermission();
+      if (permission === "granted") {
+        showAlert("Browser notification permission granted!", "success");
+      } else {
+        showAlert("Browser notification permission denied.", "info");
+      }
+    }
+
+    function escapeHtml(str) {
+      if (!str) return '';
+      return String(str)
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#039;');
     }
 
     // Cancel Booking Action
@@ -843,6 +969,7 @@
       loadFarmerProfile();
       loadAvailableSlots();
       loadMyBookings();
+      loadNotifications();
     });
   </script>
 </body>

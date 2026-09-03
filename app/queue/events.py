@@ -102,12 +102,73 @@ def emit_delay_update(centre_id: int, slot_date, reason: str = "DELAY_UPDATED"):
     socketio.emit("delay_updated", payload, to=centre_room, namespace="/queue")
 
 
+def emit_notification_created(user_id: int, notification):
+    """Emit lightweight notification_created event post DB commit to specific user's room.
+
+    Args:
+        user_id: Local user ID receiving the notification.
+        notification: Notification model instance or dict with keys.
+    """
+    user_room = f"farmer_user_{user_id}"
+    notif_id = getattr(notification, "id", None) or notification.get("id")
+    notif_type = getattr(notification, "notification_type", None) or notification.get("notification_type")
+    title = getattr(notification, "title", None) or notification.get("title")
+    message = getattr(notification, "message", None) or notification.get("message")
+    created_at = getattr(notification, "created_at", None)
+    if created_at and hasattr(created_at, "isoformat"):
+        created_at_str = created_at.isoformat()
+    else:
+        created_at_str = str(created_at) if created_at else None
+
+    payload = {
+        "notification_id": notif_id,
+        "type": notif_type,
+        "title": title,
+        "message": message,
+        "created_at": created_at_str,
+        "is_read": False,
+    }
+
+    socketio.emit("notification_created", payload, to=user_room, namespace="/queue")
+
+
 class QueueNamespace(Namespace):
     """SocketIO Namespace handler for /queue."""
 
     def on_connect(self, auth=None):
         """Client connection handler."""
         pass
+
+    def on_subscribe_user_notifications(self, data):
+        """Subscribe authenticated user to their notification room (farmer_user_<user_id>)."""
+        if not isinstance(data, dict):
+            return {"error": "Invalid payload format. Expected JSON object."}
+
+        token = data.get("token") or (
+            request.headers.get("Authorization", "").replace("Bearer ", "")
+            if request.headers.get("Authorization")
+            else None
+        )
+
+        if not token:
+            return {"error": "Authentication required."}
+
+        supabase_user = verify_token(token)
+        if not supabase_user:
+            return {"error": "Invalid or expired authentication token."}
+
+        user = get_local_user(supabase_user.id)
+        if not user or not user.is_active:
+            return {"error": "Unauthorized access."}
+
+        user_room = f"farmer_user_{user.id}"
+        join_room(user_room)
+
+        return {
+            "status": "subscribed",
+            "user_id": user.id,
+            "room": user_room,
+        }
 
     def on_subscribe_queue(self, data):
         """Subscribe authenticated farmer to their booking queue room."""
@@ -145,6 +206,10 @@ class QueueNamespace(Namespace):
 
         farmer_room = f"farmer_booking_{booking.id}"
         join_room(farmer_room)
+
+        # Also join user notification room
+        user_room = f"farmer_user_{user.id}"
+        join_room(user_room)
 
         # Also join centre date room so farmer receives centre-wide queue events
         if booking.slot:

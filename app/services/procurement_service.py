@@ -141,6 +141,21 @@ def create_procurement(booking_id: int, data: dict) -> Procurement:
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_procurement_update(booking.id, centre_id, slot_date, reason="PROCUREMENT_CREATED")
 
+    try:
+        if booking.farmer and booking.farmer.user_id:
+            from app.services.notification_service import create_notification
+            from app.models import NotificationType
+
+            create_notification(
+                user_id=booking.farmer.user_id,
+                notification_type=NotificationType.PROCUREMENT_UPDATE,
+                title=f"Procurement Status: {status}",
+                message=f"Procurement status for token {booking.token_number or ''} updated to {status.replace('_', ' ')}.",
+                booking_id=booking.id,
+            )
+    except Exception:
+        pass
+
     return procurement
 
 
@@ -157,6 +172,7 @@ def update_procurement(booking_id: int, data: dict) -> Procurement:
     if not procurement:
         raise ProcurementNotFoundError(f"No procurement record exists for booking {booking_id}.")
 
+    old_status = procurement.procurement_status
     errors = []
 
     if "procurement_status" in data:
@@ -212,6 +228,9 @@ def update_procurement(booking_id: int, data: dict) -> Procurement:
     if errors:
         raise ProcurementValidationError(errors)
 
+    new_status = procurement.procurement_status
+    status_changed = old_status != new_status
+
     try:
         db.session.commit()
     except Exception as exc:
@@ -222,5 +241,20 @@ def update_procurement(booking_id: int, data: dict) -> Procurement:
     centre_id = booking.slot.centre_id if booking.slot else None
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_procurement_update(booking.id, centre_id, slot_date, reason="PROCUREMENT_UPDATED")
+
+    try:
+        if status_changed and booking.farmer and booking.farmer.user_id:
+            from app.services.notification_service import create_notification
+            from app.models import NotificationType
+
+            create_notification(
+                user_id=booking.farmer.user_id,
+                notification_type=NotificationType.PROCUREMENT_UPDATE,
+                title=f"Procurement Status: {new_status}",
+                message=f"Procurement status for token {booking.token_number or ''} updated to {new_status.replace('_', ' ')}.",
+                booking_id=booking.id,
+            )
+    except Exception:
+        pass
 
     return procurement

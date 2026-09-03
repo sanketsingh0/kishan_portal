@@ -145,6 +145,21 @@ def create_payment(booking_id: int, data: dict) -> Payment:
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_payment_update(booking.id, centre_id, slot_date, reason="PAYMENT_CREATED")
 
+    try:
+        if booking.farmer and booking.farmer.user_id:
+            from app.services.notification_service import create_notification
+            from app.models import NotificationType
+
+            create_notification(
+                user_id=booking.farmer.user_id,
+                notification_type=NotificationType.PAYMENT_UPDATE,
+                title=f"Payment Status: {status}",
+                message=f"Payment status for token {booking.token_number or ''} updated to {status.replace('_', ' ')}.",
+                booking_id=booking.id,
+            )
+    except Exception:
+        pass
+
     return payment
 
 
@@ -161,6 +176,7 @@ def update_payment(booking_id: int, data: dict) -> Payment:
     if not payment:
         raise PaymentNotFoundError(f"No payment record exists for booking {booking_id}.")
 
+    old_status = payment.payment_status
     errors = []
 
     if "payment_status" in data:
@@ -216,6 +232,9 @@ def update_payment(booking_id: int, data: dict) -> Payment:
     if errors:
         raise PaymentValidationError(errors)
 
+    new_status = payment.payment_status
+    status_changed = old_status != new_status
+
     try:
         db.session.commit()
     except Exception as exc:
@@ -226,5 +245,20 @@ def update_payment(booking_id: int, data: dict) -> Payment:
     centre_id = booking.slot.centre_id if booking.slot else None
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_payment_update(booking.id, centre_id, slot_date, reason="PAYMENT_UPDATED")
+
+    try:
+        if status_changed and booking.farmer and booking.farmer.user_id:
+            from app.services.notification_service import create_notification
+            from app.models import NotificationType
+
+            create_notification(
+                user_id=booking.farmer.user_id,
+                notification_type=NotificationType.PAYMENT_UPDATE,
+                title=f"Payment Status: {new_status}",
+                message=f"Payment status for token {booking.token_number or ''} updated to {new_status.replace('_', ' ')}.",
+                booking_id=booking.id,
+            )
+    except Exception:
+        pass
 
     return payment

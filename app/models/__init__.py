@@ -23,6 +23,7 @@ from app.models.booking import Booking, BookingStatus
 from app.models.procurement import Procurement, ProcurementStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.delay import Delay, DelayStatus
+from app.models.notification import Notification, NotificationType, PushSubscription
 
 __all__ = [
     "TimestampMixin",
@@ -42,4 +43,7 @@ __all__ = [
     "PaymentStatus",
     "Delay",
     "DelayStatus",
+    "Notification",
+    "NotificationType",
+    "PushSubscription",
 ]
