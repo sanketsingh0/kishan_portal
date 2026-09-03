@@ -611,10 +611,23 @@
                     <i class="fa-solid fa-clock ms-2 me-1"></i>${slot.start_time || ''} - ${slot.end_time || ''}
                   </div>
                   ${isActive ? `
-                    <div class="p-2 border rounded-2 bg-light d-flex flex-wrap align-items-center gap-3 small text-dark" id="queue-status-box-${b.id}">
+                    <div class="p-2 border rounded-2 bg-light d-flex flex-wrap align-items-center gap-3 small text-dark mb-2" id="queue-status-box-${b.id}">
                       <span class="text-muted"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading queue status...</span>
                     </div>
                   ` : ''}
+                  <!-- Procurement & Payment Status Cards -->
+                  <div class="row g-2 mt-1">
+                    <div class="col-12 col-md-6">
+                      <div class="p-2 border rounded-2 bg-light small" id="procurement-status-box-${b.id}">
+                        <span class="text-muted"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading procurement status...</span>
+                      </div>
+                    </div>
+                    <div class="col-12 col-md-6">
+                      <div class="p-2 border rounded-2 bg-light small" id="payment-status-box-${b.id}">
+                        <span class="text-muted"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading payment status...</span>
+                      </div>
+                    </div>
+                  </div>
                 </div>
                 <div>
                   ${isActive ? `
@@ -630,24 +643,95 @@
           `;
         }).join("");
 
-        // Fetch queue status for active bookings and subscribe to Socket.IO realtime updates
-        const activeBookings = data.bookings.filter(b => b.status === "CONFIRMED" || b.status === "PENDING");
-        activeBookings.forEach(async (b) => {
+        // Fetch queue, procurement, and payment status for bookings
+        data.bookings.forEach(async (b) => {
+          // 1. Queue Status
+          if (b.status === "CONFIRMED" || b.status === "PENDING") {
+            try {
+              const qRes = await fetch(`/api/queue/my/${b.id}`, {
+                headers: token ? { "Authorization": `Bearer ${token}` } : {}
+              });
+              const qData = await qRes.json();
+              const box = document.getElementById(`queue-status-box-${b.id}`);
+              if (box && qRes.ok && qData.is_active_queue) {
+                box.innerHTML = `
+                  <div><i class="fa-solid fa-users-line me-1 text-primary"></i>Queue Position: <strong>#${qData.queue_position}</strong></div>
+                  <div><i class="fa-solid fa-user-clock me-1 text-warning"></i>Farmers Ahead: <strong>${qData.farmers_ahead}</strong></div>
+                  <div><i class="fa-solid fa-hourglass-half me-1 text-info"></i>Est. Wait: <strong>~${qData.estimated_wait_minutes} mins</strong></div>
+                  <div class="ms-auto"><span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-solid fa-bolt me-1"></i>Realtime Live</span></div>
+                `;
+              } else if (box) {
+                box.innerHTML = `<span class="text-muted">Queue status unavailable</span>`;
+              }
+            } catch (e) {
+              console.error(e);
+            }
+          }
+
+          // 2. Procurement Status
           try {
-            const qRes = await fetch(`/api/queue/my/${b.id}`, {
+            const pRes = await fetch(`/api/procurement/my/${b.id}`, {
               headers: token ? { "Authorization": `Bearer ${token}` } : {}
             });
-            const qData = await qRes.json();
-            const box = document.getElementById(`queue-status-box-${b.id}`);
-            if (box && qRes.ok && qData.is_active_queue) {
-              box.innerHTML = `
-                <div><i class="fa-solid fa-users-line me-1 text-primary"></i>Queue Position: <strong>#${qData.queue_position}</strong></div>
-                <div><i class="fa-solid fa-user-clock me-1 text-warning"></i>Farmers Ahead: <strong>${qData.farmers_ahead}</strong></div>
-                <div><i class="fa-solid fa-hourglass-half me-1 text-info"></i>Est. Wait: <strong>~${qData.estimated_wait_minutes} mins</strong></div>
-                <div class="ms-auto"><span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-solid fa-bolt me-1"></i>Realtime Live</span></div>
+            const pData = await pRes.json();
+            const pBox = document.getElementById(`procurement-status-box-${b.id}`);
+            if (pBox && pRes.ok && pData.procurement) {
+              const proc = pData.procurement;
+              const pStatus = proc.procurement_status || "PENDING";
+              let badgeClass = "bg-warning text-dark";
+              if (pStatus === "COMPLETED") badgeClass = "bg-success";
+              else if (pStatus === "IN_PROGRESS") badgeClass = "bg-primary";
+              else if (pStatus === "REJECTED") badgeClass = "bg-danger";
+
+              let details = [];
+              if (proc.quantity) details.push(`<strong>${proc.quantity}</strong> ${proc.unit || 'quintal'}`);
+              if (proc.procurement_date) details.push(`Date: ${proc.procurement_date}`);
+              if (proc.remarks) details.push(`Note: ${proc.remarks}`);
+
+              pBox.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-bold text-dark"><i class="fa-solid fa-boxes-packing me-1 text-success"></i>Procurement:</span>
+                  <span class="badge ${badgeClass}">${pStatus}</span>
+                </div>
+                ${details.length > 0 ? `<div class="text-muted small">${details.join(" | ")}</div>` : '<div class="text-muted small">No procurement details recorded yet.</div>'}
               `;
-            } else if (box) {
-              box.innerHTML = `<span class="text-muted">Queue status unavailable</span>`;
+            } else if (pBox) {
+              pBox.innerHTML = `<div class="d-flex justify-content-between align-items-center"><span class="fw-bold text-dark"><i class="fa-solid fa-boxes-packing me-1 text-success"></i>Procurement:</span><span class="badge bg-warning text-dark">PENDING</span></div>`;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+
+          // 3. Payment Status
+          try {
+            const payRes = await fetch(`/api/payment/my/${b.id}`, {
+              headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+            const payData = await payRes.json();
+            const payBox = document.getElementById(`payment-status-box-${b.id}`);
+            if (payBox && payRes.ok && payData.payment) {
+              const pay = payData.payment;
+              const payStatus = pay.payment_status || "PENDING";
+              let badgeClass = "bg-warning text-dark";
+              if (payStatus === "PAID") badgeClass = "bg-success";
+              else if (payStatus === "PROCESSING") badgeClass = "bg-info text-dark";
+              else if (payStatus === "FAILED") badgeClass = "bg-danger";
+
+              let details = [];
+              if (pay.amount !== null && pay.amount !== undefined) details.push(`<strong>₹${pay.amount}</strong>`);
+              if (pay.payment_reference) details.push(`Ref: <code>${pay.payment_reference}</code>`);
+              if (pay.payment_date) details.push(`Date: ${pay.payment_date}`);
+              if (pay.remarks) details.push(`Note: ${pay.remarks}`);
+
+              payBox.innerHTML = `
+                <div class="d-flex justify-content-between align-items-center mb-1">
+                  <span class="fw-bold text-dark"><i class="fa-solid fa-receipt me-1 text-primary"></i>Payment:</span>
+                  <span class="badge ${badgeClass}">${payStatus}</span>
+                </div>
+                ${details.length > 0 ? `<div class="text-muted small">${details.join(" | ")}</div>` : '<div class="text-muted small">No payment details recorded yet.</div>'}
+              `;
+            } else if (payBox) {
+              payBox.innerHTML = `<div class="d-flex justify-content-between align-items-center"><span class="fw-bold text-dark"><i class="fa-solid fa-receipt me-1 text-primary"></i>Payment:</span><span class="badge bg-warning text-dark">PENDING</span></div>`;
             }
           } catch (e) {
             console.error(e);
@@ -655,6 +739,7 @@
         });
 
         // Initialize Socket.IO connection for realtime updates
+        const activeBookings = data.bookings.filter(b => b.status === "CONFIRMED" || b.status === "PENDING");
         initQueueRealtimeSocket(activeBookings.map(b => b.id), token);
 
       } catch (err) {
@@ -684,7 +769,16 @@
 
         queueSocket.on("queue_updated", (data) => {
           console.log("Realtime queue_updated event received:", data);
-          // Refresh active bookings automatically
+          loadMyBookings();
+        });
+
+        queueSocket.on("procurement_updated", (data) => {
+          console.log("Realtime procurement_updated event received:", data);
+          loadMyBookings();
+        });
+
+        queueSocket.on("payment_updated", (data) => {
+          console.log("Realtime payment_updated event received:", data);
           loadMyBookings();
         });
 

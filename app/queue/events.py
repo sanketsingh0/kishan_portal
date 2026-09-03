@@ -45,6 +45,46 @@ def emit_queue_update(centre_id: int, slot_date, booking_id: int | None = None, 
         socketio.emit("queue_updated", payload, to=farmer_room, namespace="/queue")
 
 
+def emit_procurement_update(booking_id: int, centre_id: int | None = None, slot_date=None, reason: str = "PROCUREMENT_UPDATED"):
+    """Emit lightweight procurement_updated event post DB commit."""
+    payload = {
+        "booking_id": booking_id,
+        "reason": reason,
+    }
+    if centre_id:
+        payload["centre_id"] = centre_id
+    if slot_date:
+        payload["slot_date"] = slot_date.isoformat() if hasattr(slot_date, "isoformat") else str(slot_date)
+
+    farmer_room = f"farmer_booking_{booking_id}"
+    socketio.emit("procurement_updated", payload, to=farmer_room, namespace="/queue")
+
+    if centre_id and slot_date:
+        date_str = slot_date.isoformat() if hasattr(slot_date, "isoformat") else str(slot_date)
+        centre_room = f"centre_queue_{centre_id}_{date_str}"
+        socketio.emit("procurement_updated", payload, to=centre_room, namespace="/queue")
+
+
+def emit_payment_update(booking_id: int, centre_id: int | None = None, slot_date=None, reason: str = "PAYMENT_UPDATED"):
+    """Emit lightweight payment_updated event post DB commit."""
+    payload = {
+        "booking_id": booking_id,
+        "reason": reason,
+    }
+    if centre_id:
+        payload["centre_id"] = centre_id
+    if slot_date:
+        payload["slot_date"] = slot_date.isoformat() if hasattr(slot_date, "isoformat") else str(slot_date)
+
+    farmer_room = f"farmer_booking_{booking_id}"
+    socketio.emit("payment_updated", payload, to=farmer_room, namespace="/queue")
+
+    if centre_id and slot_date:
+        date_str = slot_date.isoformat() if hasattr(slot_date, "isoformat") else str(slot_date)
+        centre_room = f"centre_queue_{centre_id}_{date_str}"
+        socketio.emit("payment_updated", payload, to=centre_room, namespace="/queue")
+
+
 class QueueNamespace(Namespace):
     """SocketIO Namespace handler for /queue."""
 
