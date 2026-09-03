@@ -90,9 +90,16 @@ def run_migrations_online():
                 directives[:] = []
                 logger.info('No changes in schema detected.')
 
+    def include_object(object, name, type_, reflected, compare_to):
+        if type_ == "check_constraint" and name == "user_role":
+            return False
+        return True
+
     conf_args = current_app.extensions['migrate'].configure_args
     if conf_args.get("process_revision_directives") is None:
         conf_args["process_revision_directives"] = process_revision_directives
+    if conf_args.get("include_object") is None:
+        conf_args["include_object"] = include_object
 
     connectable = get_engine()
 

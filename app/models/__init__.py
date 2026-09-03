@@ -18,6 +18,8 @@ from app.models.farmer import Farmer
 from app.models.staff import Staff
 from app.models.centre import Centre
 from app.models.crop import Crop
+from app.models.slot import Slot, SlotStatus
+from app.models.booking import Booking, BookingStatus
 
 __all__ = [
     "TimestampMixin",
@@ -27,4 +29,8 @@ __all__ = [
     "Staff",
     "Centre",
     "Crop",
+    "Slot",
+    "SlotStatus",
+    "Booking",
+    "BookingStatus",
 ]

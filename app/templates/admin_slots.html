@@ -1,0 +1,387 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KisanProcure - Slot Management</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Google Fonts & FontAwesome -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <style>
+    :root {
+      --kp-primary: #1b4332;
+      --kp-primary-light: #2d6a4f;
+      --kp-accent: #52b788;
+      --kp-bg: #f4f7f5;
+    }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, sans-serif;
+      background-color: var(--kp-bg);
+      color: #212529;
+      min-height: 100vh;
+    }
+    .navbar-kp {
+      background: linear-gradient(135deg, #0d1b2a, #1b263b);
+      box-shadow: 0 4px 12px rgba(0,0,0,0.15);
+    }
+    .hero-slots {
+      background: linear-gradient(135deg, #2d6a4f 0%, #1b4332 100%);
+      color: white;
+      border-radius: 16px;
+      padding: 2rem;
+      margin-bottom: 2rem;
+    }
+    .card-custom {
+      border: 1px solid rgba(0,0,0,0.06);
+      border-radius: 16px;
+      background: white;
+      box-shadow: 0 4px 16px rgba(0,0,0,0.04);
+    }
+    .btn-kp-primary {
+      background-color: var(--kp-primary);
+      color: white;
+      border-radius: 8px;
+      font-weight: 600;
+    }
+    .btn-kp-primary:hover {
+      background-color: var(--kp-primary-light);
+      color: white;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark navbar-kp sticky-top">
+    <div class="container">
+      <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="#">
+        <i class="fa-solid fa-calendar-days text-warning"></i>
+        <span>KisanProcure Slot Manager</span>
+      </a>
+      <span class="badge bg-success rounded-pill px-3 py-2 fs-6">Staff & Admin Panel</span>
+    </div>
+  </nav>
+
+  <div class="container py-4">
+
+    <!-- Alert Box -->
+    <div id="alertBox" class="alert d-none alert-dismissible fade show" role="alert">
+      <span id="alertMsg"></span>
+      <button type="button" class="btn-close" onclick="this.parentElement.classList.add('d-none')"></button>
+    </div>
+
+    <!-- Hero -->
+    <div class="hero-slots d-flex justify-content-between align-items-center">
+      <div>
+        <h2 class="fw-bold mb-1"><i class="fa-solid fa-clock me-2"></i>Procurement Slots Management</h2>
+        <p class="mb-0 text-white-50">Create, view, update, and cancel time slots for procurement centres and crop catalogues.</p>
+      </div>
+      <button class="btn btn-light fw-bold text-dark" onclick="openCreateSlotModal()">
+        <i class="fa-solid fa-plus me-2 text-success"></i>Create Slot
+      </button>
+    </div>
+
+    <!-- Filters Card -->
+    <div class="card card-custom p-4 mb-4">
+      <h6 class="fw-bold text-muted mb-3"><i class="fa-solid fa-filter me-2"></i>Filter Slots</h6>
+      <div class="row g-3">
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">Centre</label>
+          <select id="filterCentre" class="form-select" onchange="loadSlots()">
+            <option value="">All Centres</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">Crop</label>
+          <select id="filterCrop" class="form-select" onchange="loadSlots()">
+            <option value="">All Crops</option>
+          </select>
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">Date</label>
+          <input type="date" id="filterDate" class="form-control" onchange="loadSlots()">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label small fw-bold">Status</label>
+          <select id="filterStatus" class="form-select" onchange="loadSlots()">
+            <option value="">All Statuses</option>
+            <option value="OPEN">OPEN</option>
+            <option value="CLOSED">CLOSED</option>
+            <option value="CANCELLED">CANCELLED</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- Table Card -->
+    <div class="card card-custom p-4">
+      <div class="table-responsive">
+        <table class="table table-hover align-middle">
+          <thead class="table-light">
+            <tr>
+              <th>ID</th>
+              <th>Centre</th>
+              <th>Crop</th>
+              <th>Date</th>
+              <th>Time Window</th>
+              <th>Capacity</th>
+              <th>Status</th>
+              <th class="text-end">Actions</th>
+            </tr>
+          </thead>
+          <tbody id="slotsTableBody">
+            <tr><td colspan="8" class="text-center text-muted py-4">Loading slots...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <!-- Slot Modal -->
+  <div class="modal fade" id="slotModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-success" id="slotModalTitle">Create Procurement Slot</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="slotForm">
+          <input type="hidden" id="slotId">
+          <div class="modal-body p-4">
+            <div id="slotModalAlert" class="alert alert-danger d-none"></div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Procurement Centre *</label>
+              <select class="form-select" id="slotCentre" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Crop Catalogue Item *</label>
+              <select class="form-select" id="slotCrop" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Slot Date *</label>
+              <input type="date" class="form-control" id="slotDate" required>
+            </div>
+            <div class="row">
+              <div class="col-6 mb-3">
+                <label class="form-label fw-semibold">Start Time *</label>
+                <input type="time" class="form-control" id="slotStart" required value="09:00">
+              </div>
+              <div class="col-6 mb-3">
+                <label class="form-label fw-semibold">End Time *</label>
+                <input type="time" class="form-control" id="slotEnd" required value="10:00">
+              </div>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Slot Capacity (Farmer Quota) *</label>
+              <input type="number" class="form-control" id="slotCapacity" min="1" value="20" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Status *</label>
+              <select class="form-select" id="slotStatus" required>
+                <option value="OPEN">OPEN</option>
+                <option value="CLOSED">CLOSED</option>
+                <option value="CANCELLED">CANCELLED</option>
+              </select>
+            </div>
+          </div>
+          <div class="modal-footer border-0 pt-0 px-4 pb-4">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary">Save Slot</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <script>
+    let centresList = [];
+    let cropsList = [];
+
+    function getAuthToken() {
+      return localStorage.getItem("kp_access_token") || "";
+    }
+
+    function showAlert(msg, type = "success") {
+      const box = document.getElementById("alertBox");
+      document.getElementById("alertMsg").innerText = msg;
+      box.className = `alert alert-${type} alert-dismissible fade show`;
+      box.classList.remove("d-none");
+    }
+
+    async function loadCentresAndCrops() {
+      const token = getAuthToken();
+      const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+
+      try {
+        const [cRes, crRes] = await Promise.all([
+          fetch("/api/centres?all=true", { headers }),
+          fetch("/api/crops?all=true", { headers })
+        ]);
+        if (cRes.ok) {
+          const cData = await cRes.json();
+          centresList = cData.centres || [];
+          const cSelect = document.getElementById("filterCentre");
+          const mSelect = document.getElementById("slotCentre");
+          cSelect.innerHTML = `<option value="">All Centres</option>` + centresList.map(c => `<option value="${c.id}">${c.name} (${c.location})</option>`).join("");
+          mSelect.innerHTML = centresList.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+        }
+        if (crRes.ok) {
+          const crData = await crRes.json();
+          cropsList = crData.crops || [];
+          const crSelect = document.getElementById("filterCrop");
+          const mSelect = document.getElementById("slotCrop");
+          crSelect.innerHTML = `<option value="">All Crops</option>` + cropsList.map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+          mSelect.innerHTML = cropsList.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+        }
+      } catch (e) {
+        console.error(e);
+      }
+    }
+
+    async function loadSlots() {
+      const token = getAuthToken();
+      const cId = document.getElementById("filterCentre").value;
+      const crId = document.getElementById("filterCrop").value;
+      const d = document.getElementById("filterDate").value;
+      const st = document.getElementById("filterStatus").value;
+
+      let query = [];
+      if (cId) query.push(`centre_id=${cId}`);
+      if (crId) query.push(`crop_id=${crId}`);
+      if (d) query.push(`date=${d}`);
+      if (st) query.push(`status=${st}`);
+
+      const url = "/api/slots" + (query.length ? "?" + query.join("&") : "");
+      const tbody = document.getElementById("slotsTableBody");
+
+      try {
+        const res = await fetch(url, { headers: token ? { "Authorization": `Bearer ${token}` } : {} });
+        const data = await res.json();
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${data.message || 'Error loading slots'}</td></tr>`;
+          return;
+        }
+
+        if (data.slots.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No slots found matching criteria.</td></tr>`;
+          return;
+        }
+
+        tbody.innerHTML = data.slots.map(s => {
+          let badge = '<span class="badge bg-success">OPEN</span>';
+          if (s.status === 'CLOSED') badge = '<span class="badge bg-warning text-dark">CLOSED</span>';
+          if (s.status === 'CANCELLED') badge = '<span class="badge bg-secondary">CANCELLED</span>';
+
+          return `
+            <tr>
+              <td>${s.id}</td>
+              <td class="fw-bold">${s.centre_name}</td>
+              <td>${s.crop_name}</td>
+              <td>${s.slot_date}</td>
+              <td>${s.start_time} - ${s.end_time}</td>
+              <td>${s.capacity}</td>
+              <td>${badge}</td>
+              <td class="text-end">
+                <button class="btn btn-sm btn-outline-primary me-1" onclick='openEditSlotModal(${JSON.stringify(s)})'>
+                  <i class="fa-solid fa-pen"></i>
+                </button>
+                ${s.status !== 'CANCELLED' ? `
+                  <button class="btn btn-sm btn-outline-danger" onclick="cancelSlot(${s.id})">
+                    <i class="fa-solid fa-ban"></i>
+                  </button>
+                ` : ''}
+              </td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        console.error(err);
+      }
+    }
+
+    function openCreateSlotModal() {
+      document.getElementById("slotId").value = "";
+      document.getElementById("slotModalTitle").innerText = "Create Procurement Slot";
+      document.getElementById("slotForm").reset();
+      // Default to tomorrow's date
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      document.getElementById("slotDate").value = tomorrow.toISOString().split('T')[0];
+      document.getElementById("slotModalAlert").classList.add("d-none");
+      new bootstrap.Modal(document.getElementById("slotModal")).show();
+    }
+
+    function openEditSlotModal(s) {
+      document.getElementById("slotId").value = s.id;
+      document.getElementById("slotModalTitle").innerText = "Edit Procurement Slot";
+      document.getElementById("slotCentre").value = s.centre_id;
+      document.getElementById("slotCrop").value = s.crop_id;
+      document.getElementById("slotDate").value = s.slot_date;
+      document.getElementById("slotStart").value = s.start_time;
+      document.getElementById("slotEnd").value = s.end_time;
+      document.getElementById("slotCapacity").value = s.capacity;
+      document.getElementById("slotStatus").value = s.status;
+      document.getElementById("slotModalAlert").classList.add("d-none");
+      new bootstrap.Modal(document.getElementById("slotModal")).show();
+    }
+
+    document.getElementById("slotForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const id = document.getElementById("slotId").value;
+      const payload = {
+        centre_id: parseInt(document.getElementById("slotCentre").value, 10),
+        crop_id: parseInt(document.getElementById("slotCrop").value, 10),
+        slot_date: document.getElementById("slotDate").value,
+        start_time: document.getElementById("slotStart").value,
+        end_time: document.getElementById("slotEnd").value,
+        capacity: parseInt(document.getElementById("slotCapacity").value, 10),
+        status: document.getElementById("slotStatus").value,
+      };
+
+      const token = getAuthToken();
+      const url = id ? `/api/slots/${id}` : "/api/slots";
+      const method = id ? "PUT" : "POST";
+
+      const res = await fetch(url, {
+        method: method,
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        const alert = document.getElementById("slotModalAlert");
+        alert.innerText = data.messages ? data.messages.join(", ") : (data.message || "Failed to save slot");
+        alert.classList.remove("d-none");
+        return;
+      }
+
+      bootstrap.Modal.getInstance(document.getElementById("slotModal")).hide();
+      showAlert(id ? "Slot updated successfully!" : "Slot created successfully!");
+      loadSlots();
+    });
+
+    async function cancelSlot(id) {
+      if (!confirm("Are you sure you want to cancel this procurement slot?")) return;
+      const token = getAuthToken();
+      const res = await fetch(`/api/slots/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        showAlert("Slot cancelled.", "warning");
+        loadSlots();
+      }
+    }
+
+    document.addEventListener("DOMContentLoaded", async () => {
+      await loadCentresAndCrops();
+      loadSlots();
+    });
+  </script>
+</body>
+</html>

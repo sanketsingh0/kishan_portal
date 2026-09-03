@@ -44,6 +44,7 @@ class Config:
     SUPABASE_URL = os.getenv("SUPABASE_URL")
     SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
     SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+    SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", os.getenv("SUPABASE_ANON_KEY", ""))
 
     # --- JWT (verification of Supabase-issued tokens) ---
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")

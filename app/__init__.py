@@ -53,12 +53,29 @@ def create_app(config_name: str | None = None) -> Flask:
         cors_allowed_origins=app.config.get("CORS_ALLOWED_ORIGINS", "*"),
     )
 
-    # --- Blueprints ------------------------------------------------------------
+    from app.queue.events import init_queue_events
+    init_queue_events(socketio)
+
+        # --- Blueprints ------------------------------------------------------------
     from app.routes.health import health_bp
     from app.routes.main import main_bp
+    from app.routes.auth import auth_bp
+    from app.routes.farmers import farmers_bp
+    from app.routes.centres import centres_bp
+    from app.routes.crops import crops_bp
+    from app.routes.slots import slots_bp
+    from app.routes.bookings import bookings_bp
+    from app.routes.queue import queue_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(main_bp)
+    app.register_blueprint(auth_bp)
+    app.register_blueprint(farmers_bp)
+    app.register_blueprint(centres_bp)
+    app.register_blueprint(crops_bp)
+    app.register_blueprint(slots_bp)
+    app.register_blueprint(bookings_bp)
+    app.register_blueprint(queue_bp)
 
     # --- CLI commands (flask seed-demo, ...) -----------------------------------
     register_cli(app)

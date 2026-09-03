@@ -1,0 +1,741 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>KisanProcure - Farmer Dashboard</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Google Fonts & FontAwesome Icons -->
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+  <!-- Socket.IO Client Library -->
+  <script src="https://cdn.socket.io/4.7.5/socket.io.min.js"></script>
+  <style>
+    :root {
+      --kp-primary: #1b4332;
+      --kp-primary-light: #2d6a4f;
+      --kp-accent: #52b788;
+      --kp-bg: #f4f7f5;
+      --kp-card-bg: #ffffff;
+      --kp-text: #212529;
+    }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--kp-bg);
+      color: var(--kp-text);
+      min-height: 100vh;
+    }
+    .navbar-kp {
+      background: linear-gradient(135deg, var(--kp-primary), var(--kp-primary-light));
+      box-shadow: 0 4px 12px rgba(0, 0, 0, 0.1);
+    }
+    .navbar-brand {
+      font-weight: 700;
+      font-size: 1.5rem;
+      letter-spacing: -0.5px;
+    }
+    .hero-welcome {
+      background: linear-gradient(135deg, #1b4332 0%, #2d6a4f 100%);
+      color: white;
+      border-radius: 16px;
+      padding: 2.5rem 2rem;
+      box-shadow: 0 8px 24px rgba(27, 67, 50, 0.15);
+      margin-bottom: 2rem;
+    }
+    .card-custom {
+      border: 1px solid rgba(0, 0, 0, 0.06);
+      border-radius: 16px;
+      background-color: var(--kp-card-bg);
+      box-shadow: 0 4px 16px rgba(0, 0, 0, 0.04);
+      transition: transform 0.2s ease, box-shadow 0.2s ease;
+    }
+    .card-custom:hover {
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.08);
+    }
+    .badge-status {
+      background-color: rgba(82, 183, 136, 0.15);
+      color: var(--kp-primary);
+      font-weight: 600;
+      padding: 0.4rem 0.8rem;
+      border-radius: 50rem;
+    }
+    .empty-state-box {
+      border: 2px dashed #d8f3dc;
+      background: #fafdfb;
+      border-radius: 16px;
+      padding: 3rem 1.5rem;
+      text-align: center;
+    }
+    .btn-kp-primary {
+      background-color: var(--kp-primary);
+      color: white;
+      border-radius: 10px;
+      font-weight: 600;
+      padding: 0.6rem 1.4rem;
+      border: none;
+      transition: all 0.2s ease;
+    }
+    .btn-kp-primary:hover {
+      background-color: var(--kp-primary-light);
+      color: white;
+    }
+    .btn-kp-accent {
+      background-color: var(--kp-accent);
+      color: #081c15;
+      font-weight: 600;
+      border-radius: 10px;
+      border: none;
+    }
+    .btn-kp-accent:hover {
+      background-color: #74c69d;
+      color: #081c15;
+    }
+    .detail-label {
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+      color: #6c757d;
+      font-weight: 600;
+    }
+    .detail-value {
+      font-size: 1.1rem;
+      font-weight: 500;
+      color: #1d3557;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark navbar-kp sticky-top">
+    <div class="container">
+      <a class="navbar-brand d-flex align-items-center gap-2" href="#">
+        <i class="fa-solid fa-wheat-awn text-warning"></i>
+        <span>KisanProcure</span>
+      </a>
+      <div class="d-flex align-items-center gap-3">
+        <span class="badge badge-status bg-light text-dark fs-6 d-none d-sm-inline-block">
+          <i class="fa-solid fa-user-check me-1 text-success"></i> Farmer Portal
+        </span>
+        <button id="logoutBtn" class="btn btn-outline-light btn-sm rounded-pill px-3">
+          <i class="fa-solid fa-right-from-bracket me-1"></i> Logout
+        </button>
+      </div>
+    </div>
+  </nav>
+
+  <!-- Main Container -->
+  <div class="container py-4">
+
+    <!-- Alert Container -->
+    <div id="alertBox" class="alert d-none alert-dismissible fade show" role="alert">
+      <span id="alertMsg"></span>
+      <button type="button" class="btn-close" onclick="hideAlert()"></button>
+    </div>
+
+    <!-- Welcome Hero -->
+    <div class="hero-welcome d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+      <div>
+        <h1 class="h2 fw-bold mb-1" id="welcomeHeading">Welcome, Farmer</h1>
+        <p class="mb-0 text-white-50">Manage your profile details and monitor procurement slot status.</p>
+      </div>
+      <div>
+        <button class="btn btn-kp-accent" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+          <i class="fa-solid fa-pen-to-square me-2"></i>Edit Profile
+        </button>
+      </div>
+    </div>
+
+    <div class="row g-4">
+      <!-- Profile Summary Card -->
+      <div class="col-lg-5">
+        <div class="card card-custom h-100">
+          <div class="card-header bg-transparent border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0 text-success">
+              <i class="fa-solid fa-id-card me-2"></i>Profile Details
+            </h5>
+            <button class="btn btn-sm btn-outline-success rounded-pill" data-bs-toggle="modal" data-bs-target="#editProfileModal">
+              Edit
+            </button>
+          </div>
+          <div class="card-body p-4">
+            <div class="mb-3 pb-2 border-bottom">
+              <div class="detail-label">Full Name</div>
+              <div class="detail-value" id="profileName">--</div>
+            </div>
+
+            <div class="mb-3 pb-2 border-bottom">
+              <div class="detail-label">Phone Number</div>
+              <div class="detail-value" id="profilePhone">--</div>
+            </div>
+
+            <div class="mb-3 pb-2 border-bottom">
+              <div class="detail-label">Address</div>
+              <div class="detail-value" id="profileAddress">--</div>
+            </div>
+
+            <div class="row">
+              <div class="col-6 mb-2">
+                <div class="detail-label">City</div>
+                <div class="detail-value" id="profileCity">--</div>
+              </div>
+              <div class="col-6 mb-2">
+                <div class="detail-label">State</div>
+                <div class="detail-value" id="profileState">--</div>
+              </div>
+              <div class="col-12 mt-2">
+                <div class="detail-label">Pincode</div>
+                <div class="detail-value" id="profilePincode">--</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- Procurement & Slots Card -->
+      <div class="col-lg-7">
+        <div class="card card-custom h-100">
+          <div class="card-header bg-transparent border-0 pt-4 px-4 pb-0 d-flex justify-content-between align-items-center">
+            <h5 class="fw-bold mb-0 text-success">
+              <i class="fa-solid fa-calendar-check me-2"></i>Procurement & Bookings
+            </h5>
+          </div>
+          <div class="card-body p-4">
+            <!-- Available Slots Section -->
+            <div class="mb-4">
+              <h6 class="fw-bold text-dark border-bottom pb-2 d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-clock-rotate-left me-2 text-success"></i>Available Procurement Slots</span>
+                <button class="btn btn-sm btn-link text-success text-decoration-none p-0" onclick="loadAvailableSlots()">
+                  <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+              </h6>
+              <div id="farmerSlotsContainer" class="row g-3">
+                <div class="col-12 text-center text-muted py-3">Loading available procurement slots...</div>
+              </div>
+            </div>
+
+            <!-- My Bookings Section -->
+            <div class="mt-4">
+              <h6 class="fw-bold text-dark border-bottom pb-2 d-flex justify-content-between align-items-center">
+                <span><i class="fa-solid fa-bookmark me-2 text-success"></i>My Bookings</span>
+                <button class="btn btn-sm btn-link text-success text-decoration-none p-0" onclick="loadMyBookings()">
+                  <i class="fa-solid fa-rotate me-1"></i>Refresh
+                </button>
+              </h6>
+              <div id="myBookingsContainer" class="row g-3">
+                <div class="col-12 text-center text-muted py-3">Loading your bookings...</div>
+              </div>
+            </div>
+
+          </div>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Booking Confirmation Modal -->
+  <div class="modal fade" id="confirmBookingModal" tabindex="-1" aria-labelledby="confirmBookingModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-success" id="confirmBookingModalLabel">
+            <i class="fa-solid fa-calendar-plus me-2"></i>Confirm Slot Booking
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body p-4">
+          <div id="bookingModalAlert" class="alert alert-danger d-none" role="alert"></div>
+
+          <div class="p-3 bg-light rounded-3 mb-3 border">
+            <div class="row g-2">
+              <div class="col-6">
+                <span class="detail-label">Centre</span>
+                <div class="fw-bold text-dark" id="modalCentreName">--</div>
+              </div>
+              <div class="col-6">
+                <span class="detail-label">Crop</span>
+                <div class="fw-bold text-success" id="modalCropName">--</div>
+              </div>
+              <div class="col-6">
+                <span class="detail-label">Date</span>
+                <div class="fw-semibold text-dark" id="modalSlotDate">--</div>
+              </div>
+              <div class="col-6">
+                <span class="detail-label">Time Window</span>
+                <div class="fw-semibold text-dark" id="modalSlotTime">--</div>
+              </div>
+              <div class="col-12 border-top pt-2 mt-2 d-flex justify-content-between align-items-center">
+                <span class="detail-label mb-0">Remaining Capacity</span>
+                <span class="badge bg-success" id="modalRemainingCapacity">--</span>
+              </div>
+            </div>
+          </div>
+
+          <p class="text-muted small mb-0">
+            <i class="fa-solid fa-circle-info me-1 text-primary"></i>
+            Token generation will be processed in the next stage after booking confirmation.
+          </p>
+        </div>
+        <div class="modal-footer border-0 pt-0 px-4 pb-4">
+          <button type="button" class="btn btn-light rounded-3 px-4" data-bs-dismiss="modal">Cancel</button>
+          <button type="button" id="confirmBookingSubmitBtn" class="btn btn-kp-primary rounded-3 px-4">
+            <i class="fa-solid fa-check me-2"></i>Confirm Booking
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- Edit Profile Modal -->
+  <div class="modal fade" id="editProfileModal" tabindex="-1" aria-labelledby="editProfileModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow-lg rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-success" id="editProfileModalLabel">
+            <i class="fa-solid fa-user-gear me-2"></i>Edit Farmer Profile
+          </h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <form id="editProfileForm">
+          <div class="modal-body p-4">
+
+            <div id="modalAlert" class="alert alert-danger d-none" role="alert"></div>
+
+            <div class="mb-3">
+              <label for="inputName" class="form-label fw-semibold">Full Name *</label>
+              <input type="text" class="form-control rounded-3" id="inputName" required minlength="2" maxlength="120">
+            </div>
+
+            <div class="mb-3">
+              <label for="inputPhone" class="form-label fw-semibold">Phone Number</label>
+              <input type="tel" class="form-control rounded-3" id="inputPhone" placeholder="e.g. 9876543210">
+              <div class="form-text">Must be a valid 10-15 digit phone number.</div>
+            </div>
+
+            <div class="mb-3">
+              <label for="inputAddress" class="form-label fw-semibold">Address</label>
+              <textarea class="form-control rounded-3" id="inputAddress" rows="2" maxlength="500"></textarea>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="inputCity" class="form-label fw-semibold">City / District</label>
+                <input type="text" class="form-control rounded-3" id="inputCity" maxlength="100">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="inputState" class="form-label fw-semibold">State</label>
+                <input type="text" class="form-control rounded-3" id="inputState" maxlength="100">
+              </div>
+            </div>
+
+            <div class="mb-3">
+              <label for="inputPincode" class="form-label fw-semibold">Pincode</label>
+              <input type="text" class="form-control rounded-3" id="inputPincode" placeholder="e.g. 110001" maxlength="6">
+            </div>
+
+          </div>
+          <div class="modal-footer border-0 pt-0 px-4 pb-4">
+            <button type="button" class="btn btn-light rounded-3 px-4" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary rounded-3 px-4">
+              <i class="fa-solid fa-floppy-disk me-2"></i>Save Changes
+            </button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Bootstrap 5 JS Bundle -->
+  <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+
+  <script>
+    let selectedSlotForBooking = null;
+
+    // Token Helper
+    function getAuthToken() {
+      return localStorage.getItem("kp_access_token") || "";
+    }
+
+    function showAlert(msg, type = "success") {
+      const alertBox = document.getElementById("alertBox");
+      const alertMsg = document.getElementById("alertMsg");
+      alertBox.className = `alert alert-${type} alert-dismissible fade show`;
+      alertMsg.innerText = msg;
+      alertBox.classList.remove("d-none");
+    }
+
+    function hideAlert() {
+      document.getElementById("alertBox").classList.add("d-none");
+    }
+
+    // Load Farmer Profile
+    async function loadFarmerProfile() {
+      const token = getAuthToken();
+      try {
+        const res = await fetch("/api/farmers/me", {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+
+        if (res.status === 401) {
+          showAlert("Authentication required. Please login first.", "warning");
+          return;
+        }
+
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.message || "Failed to load profile", "danger");
+          return;
+        }
+
+        const farmer = data.farmer;
+        document.getElementById("welcomeHeading").innerText = `Welcome, ${farmer.name || 'Farmer'}`;
+        document.getElementById("profileName").innerText = farmer.name || "--";
+        document.getElementById("profilePhone").innerText = farmer.phone || "--";
+        document.getElementById("profileAddress").innerText = farmer.address || "--";
+        document.getElementById("profileCity").innerText = farmer.city || "--";
+        document.getElementById("profileState").innerText = farmer.state || "--";
+        document.getElementById("profilePincode").innerText = farmer.pincode || "--";
+
+        // Pre-fill modal
+        document.getElementById("inputName").value = farmer.name || "";
+        document.getElementById("inputPhone").value = farmer.phone || "";
+        document.getElementById("inputAddress").value = farmer.address || "";
+        document.getElementById("inputCity").value = farmer.city || "";
+        document.getElementById("inputState").value = farmer.state || "";
+        document.getElementById("inputPincode").value = farmer.pincode || "";
+
+      } catch (err) {
+        console.error(err);
+        showAlert("Network error loading farmer profile.", "danger");
+      }
+    }
+
+    // Submit Edit Profile Form
+    document.getElementById("editProfileForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      const modalAlert = document.getElementById("modalAlert");
+      modalAlert.classList.add("d-none");
+
+      const payload = {
+        name: document.getElementById("inputName").value.trim(),
+        phone: document.getElementById("inputPhone").value.trim() || null,
+        address: document.getElementById("inputAddress").value.trim() || null,
+        city: document.getElementById("inputCity").value.trim() || null,
+        state: document.getElementById("inputState").value.trim() || null,
+        pincode: document.getElementById("inputPincode").value.trim() || null,
+      };
+
+      const token = getAuthToken();
+      try {
+        const res = await fetch("/api/farmers/me", {
+          method: "PUT",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          const errMsg = data.messages ? data.messages.join(", ") : (data.message || "Failed to update profile");
+          modalAlert.innerText = errMsg;
+          modalAlert.classList.remove("d-none");
+          return;
+        }
+
+        const modalEl = document.getElementById("editProfileModal");
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+
+        showAlert("Profile updated successfully!", "success");
+        loadFarmerProfile();
+
+      } catch (err) {
+        console.error(err);
+        modalAlert.innerText = "An unexpected error occurred.";
+        modalAlert.classList.remove("d-none");
+      }
+    });
+
+    // Load Available Procurement Slots
+    async function loadAvailableSlots() {
+      const token = getAuthToken();
+      const container = document.getElementById("farmerSlotsContainer");
+      try {
+        const res = await fetch("/api/slots", {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (!res.ok || !data.slots || data.slots.length === 0) {
+          container.innerHTML = `<div class="col-12 text-center text-muted py-3 border rounded-3 bg-white">No upcoming procurement slots currently open.</div>`;
+          return;
+        }
+
+        window._availableSlotsCache = data.slots;
+
+        container.innerHTML = data.slots.map(s => {
+          const isFull = s.remaining_capacity <= 0;
+          return `
+            <div class="col-md-6">
+              <div class="p-3 border rounded-3 bg-white h-100 shadow-sm d-flex flex-column justify-content-between">
+                <div>
+                  <div class="d-flex justify-content-between align-items-center mb-1">
+                    <span class="fw-bold text-success"><i class="fa-solid fa-wheat-awn me-1"></i>${s.crop_name}</span>
+                    <span class="badge ${isFull ? 'bg-danger' : 'bg-success'}">${isFull ? 'FULL' : 'OPEN'}</span>
+                  </div>
+                  <div class="small fw-semibold text-dark mb-1"><i class="fa-solid fa-location-dot me-1 text-muted"></i>${s.centre_name}</div>
+                  <div class="text-muted small mb-2"><i class="fa-solid fa-calendar me-1"></i>${s.slot_date} (${s.start_time} - ${s.end_time})</div>
+                  <div class="d-flex justify-content-between align-items-center extra-small text-secondary mb-3">
+                    <span>Capacity: <strong>${s.capacity}</strong></span>
+                    <span>Remaining: <strong class="${isFull ? 'text-danger' : 'text-success'}">${s.remaining_capacity}</strong></span>
+                  </div>
+                </div>
+                <button class="btn btn-sm ${isFull ? 'btn-secondary' : 'btn-kp-primary'} w-100" ${isFull ? 'disabled' : ''} onclick="openBookingModal(${s.id})">
+                  <i class="fa-solid ${isFull ? 'fa-ban' : 'fa-plus-circle'} me-1"></i>${isFull ? 'Slot Full' : 'Book Slot'}
+                </button>
+              </div>
+            </div>
+          `;
+        }).join("");
+      } catch (e) {
+        console.error(e);
+        container.innerHTML = `<div class="col-12 text-center text-muted py-3 border rounded-3 bg-white">Slots catalogue unavailable.</div>`;
+      }
+    }
+
+    // Open Booking Confirmation Modal
+    function openBookingModal(slotId) {
+      const slots = window._availableSlotsCache || [];
+      const slot = slots.find(s => s.id === slotId);
+      if (!slot) return;
+
+      selectedSlotForBooking = slot;
+      document.getElementById("bookingModalAlert").classList.add("d-none");
+      document.getElementById("modalCentreName").innerText = slot.centre_name || "--";
+      document.getElementById("modalCropName").innerText = slot.crop_name || "--";
+      document.getElementById("modalSlotDate").innerText = slot.slot_date || "--";
+      document.getElementById("modalSlotTime").innerText = `${slot.start_time} - ${slot.end_time}`;
+      document.getElementById("modalRemainingCapacity").innerText = `${slot.remaining_capacity} available`;
+
+      const modal = new bootstrap.Modal(document.getElementById("confirmBookingModal"));
+      modal.show();
+    }
+
+    // Confirm Booking Action
+    document.getElementById("confirmBookingSubmitBtn").addEventListener("click", async function() {
+      if (!selectedSlotForBooking) return;
+
+      const modalAlert = document.getElementById("bookingModalAlert");
+      modalAlert.classList.add("d-none");
+
+      const token = getAuthToken();
+      try {
+        const res = await fetch("/api/bookings", {
+          method: "POST",
+          headers: {
+            "Content-Type": "application/json",
+            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+          },
+          body: JSON.stringify({ slot_id: selectedSlotForBooking.id })
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          const errMsg = data.messages ? data.messages.join(", ") : (data.message || "Failed to book slot.");
+          modalAlert.innerText = errMsg;
+          modalAlert.classList.remove("d-none");
+          return;
+        }
+
+        const modalEl = document.getElementById("confirmBookingModal");
+        const modal = bootstrap.Modal.getInstance(modalEl);
+        modal.hide();
+
+        const tokenNum = data.booking ? data.booking.token_number : "";
+        showAlert(`Booking confirmed! YOUR PROCUREMENT TOKEN: ${tokenNum}`, "success");
+        loadAvailableSlots();
+        loadMyBookings();
+
+      } catch (err) {
+        console.error(err);
+        modalAlert.innerText = "Network error processing booking.";
+        modalAlert.classList.remove("d-none");
+      }
+    });
+
+    // Load Farmer Bookings
+    async function loadMyBookings() {
+      const token = getAuthToken();
+      const container = document.getElementById("myBookingsContainer");
+      try {
+        const res = await fetch("/api/bookings/my", {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+
+        const data = await res.json();
+        if (!res.ok || !data.bookings || data.bookings.length === 0) {
+          container.innerHTML = `
+            <div class="col-12 text-center text-muted py-4 border rounded-3 bg-white">
+              <i class="fa-solid fa-calendar-xmark fa-2x mb-2 opacity-50"></i>
+              <div>No bookings found. Select an available slot above to create a booking.</div>
+            </div>
+          `;
+          return;
+        }
+
+        container.innerHTML = data.bookings.map(b => {
+          const isActive = b.status === "CONFIRMED" || b.status === "PENDING";
+          const isCancelled = b.status === "CANCELLED";
+          const statusClass = isActive ? "bg-success" : (isCancelled ? "bg-secondary" : "bg-info");
+          const slot = b.slot || {};
+
+          return `
+            <div class="col-12">
+              <div class="p-3 border rounded-3 bg-white shadow-sm d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-3">
+                <div>
+                  <div class="d-flex align-items-center gap-2 mb-1 flex-wrap">
+                    <span class="badge ${statusClass}">${b.status}</span>
+                    ${b.token_number ? `<span class="badge bg-dark fs-6 px-3 py-1 fw-bold text-warning"><i class="fa-solid fa-ticket me-1"></i>${b.token_number}</span>` : ''}
+                    <span class="small text-muted">Booking #${b.id}</span>
+                  </div>
+                  <div class="fw-bold text-dark mb-1">
+                    <i class="fa-solid fa-wheat-awn me-1 text-success"></i>${slot.crop || 'Crop'} 
+                    <span class="text-muted fw-normal">at</span> 
+                    <i class="fa-solid fa-location-dot me-1 ms-1 text-muted"></i>${slot.centre || 'Centre'}
+                  </div>
+                  <div class="text-muted small mb-2">
+                    <i class="fa-solid fa-calendar me-1"></i>${slot.slot_date || '--'} 
+                    <i class="fa-solid fa-clock ms-2 me-1"></i>${slot.start_time || ''} - ${slot.end_time || ''}
+                  </div>
+                  ${isActive ? `
+                    <div class="p-2 border rounded-2 bg-light d-flex flex-wrap align-items-center gap-3 small text-dark" id="queue-status-box-${b.id}">
+                      <span class="text-muted"><i class="fa-solid fa-spinner fa-spin me-1"></i>Loading queue status...</span>
+                    </div>
+                  ` : ''}
+                </div>
+                <div>
+                  ${isActive ? `
+                    <button class="btn btn-sm btn-outline-danger" onclick="cancelBookingAction(${b.id})">
+                      <i class="fa-solid fa-xmark me-1"></i>Cancel Booking
+                    </button>
+                  ` : `
+                    <span class="text-muted small"><i class="fa-solid fa-circle-check me-1"></i>${b.status}</span>
+                  `}
+                </div>
+              </div>
+            </div>
+          `;
+        }).join("");
+
+        // Fetch queue status for active bookings and subscribe to Socket.IO realtime updates
+        const activeBookings = data.bookings.filter(b => b.status === "CONFIRMED" || b.status === "PENDING");
+        activeBookings.forEach(async (b) => {
+          try {
+            const qRes = await fetch(`/api/queue/my/${b.id}`, {
+              headers: token ? { "Authorization": `Bearer ${token}` } : {}
+            });
+            const qData = await qRes.json();
+            const box = document.getElementById(`queue-status-box-${b.id}`);
+            if (box && qRes.ok && qData.is_active_queue) {
+              box.innerHTML = `
+                <div><i class="fa-solid fa-users-line me-1 text-primary"></i>Queue Position: <strong>#${qData.queue_position}</strong></div>
+                <div><i class="fa-solid fa-user-clock me-1 text-warning"></i>Farmers Ahead: <strong>${qData.farmers_ahead}</strong></div>
+                <div><i class="fa-solid fa-hourglass-half me-1 text-info"></i>Est. Wait: <strong>~${qData.estimated_wait_minutes} mins</strong></div>
+                <div class="ms-auto"><span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-solid fa-bolt me-1"></i>Realtime Live</span></div>
+              `;
+            } else if (box) {
+              box.innerHTML = `<span class="text-muted">Queue status unavailable</span>`;
+            }
+          } catch (e) {
+            console.error(e);
+          }
+        });
+
+        // Initialize Socket.IO connection for realtime updates
+        initQueueRealtimeSocket(activeBookings.map(b => b.id), token);
+
+      } catch (err) {
+        console.error(err);
+        container.innerHTML = `<div class="col-12 text-center text-muted py-3 border rounded-3 bg-white">Bookings unavailable.</div>`;
+      }
+    }
+
+    let queueSocket = null;
+    function initQueueRealtimeSocket(activeBookingIds, authToken) {
+      if (typeof io === "undefined") return;
+
+      if (!queueSocket) {
+        queueSocket = io("/queue", {
+          transports: ["websocket", "polling"],
+          autoConnect: true
+        });
+
+        queueSocket.on("connect", () => {
+          console.log("Connected to /queue socket namespace.");
+          if (activeBookingIds && activeBookingIds.length > 0) {
+            activeBookingIds.forEach(id => {
+              queueSocket.emit("subscribe_queue", { booking_id: id, token: authToken });
+            });
+          }
+        });
+
+        queueSocket.on("queue_updated", (data) => {
+          console.log("Realtime queue_updated event received:", data);
+          // Refresh active bookings automatically
+          loadMyBookings();
+        });
+
+        queueSocket.on("disconnect", () => {
+          console.log("Disconnected from /queue socket namespace.");
+        });
+      } else if (queueSocket.connected && activeBookingIds && activeBookingIds.length > 0) {
+        activeBookingIds.forEach(id => {
+          queueSocket.emit("subscribe_queue", { booking_id: id, token: authToken });
+        });
+      }
+    }
+
+    // Cancel Booking Action
+    async function cancelBookingAction(bookingId) {
+      if (!confirm(`Are you sure you want to cancel booking #${bookingId}?`)) return;
+
+      const token = getAuthToken();
+      try {
+        const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
+          method: "PUT",
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+
+        const data = await res.json();
+        if (!res.ok) {
+          showAlert(data.message || "Failed to cancel booking.", "danger");
+          return;
+        }
+
+        showAlert(`Booking #${bookingId} cancelled successfully.`, "info");
+        loadAvailableSlots();
+        loadMyBookings();
+
+      } catch (err) {
+        console.error(err);
+        showAlert("Network error cancelling booking.", "danger");
+      }
+    }
+
+    document.getElementById("logoutBtn").addEventListener("click", function() {
+      localStorage.removeItem("kp_access_token");
+      showAlert("Logged out successfully.", "info");
+    });
+
+    // Initial Load
+    document.addEventListener("DOMContentLoaded", function() {
+      loadFarmerProfile();
+      loadAvailableSlots();
+      loadMyBookings();
+    });
+  </script>
+</body>
+</html>
