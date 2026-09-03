@@ -87,6 +87,17 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
 
+    # --- Security Headers & Response Controls ------------------------------
+    @app.after_request
+    def set_security_headers(response):
+        response.headers["X-Content-Type-Options"] = "nosniff"
+        response.headers["X-Frame-Options"] = "SAMEORIGIN"
+        response.headers["Referrer-Policy"] = "strict-origin-when-cross-origin"
+        from flask import request
+        if request.path.startswith("/api/"):
+            response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
+        return response
+
     # --- CLI commands (flask seed-demo, ...) -----------------------------------
     register_cli(app)
 

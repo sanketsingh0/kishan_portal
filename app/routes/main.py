@@ -32,3 +32,8 @@ def admin_slots():
 @main_bp.get("/admin/dashboard")
 def admin_dashboard():
     return render_template("admin_dashboard.html")
+
+
+@main_bp.get("/offline")
+def offline():
+    return render_template("offline.html")

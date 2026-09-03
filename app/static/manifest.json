@@ -1,0 +1,24 @@
+{
+  "name": "KisanProcure — Smart Crop Procurement",
+  "short_name": "KisanProcure",
+  "description": "Smart Farmer Queue Management, Token Generation & Crop Procurement System",
+  "start_url": "/farmer/dashboard",
+  "display": "standalone",
+  "background_color": "#0f172a",
+  "theme_color": "#10b981",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/static/icons/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/static/icons/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
