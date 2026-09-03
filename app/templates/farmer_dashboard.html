@@ -654,11 +654,20 @@
               const qData = await qRes.json();
               const box = document.getElementById(`queue-status-box-${b.id}`);
               if (box && qRes.ok && qData.is_active_queue) {
+                let delayInfo = "";
+                if (qData.active_delay_minutes > 0) {
+                  const reasonStr = qData.active_delays && qData.active_delays.length > 0 && qData.active_delays[0].reason ? ` (${qData.active_delays[0].reason})` : "";
+                  delayInfo = `
+                    <div class="mt-1 text-danger small"><i class="fa-solid fa-triangle-exclamation me-1"></i>Active Delay: <strong>+${qData.active_delay_minutes} mins</strong>${reasonStr}</div>
+                    <div class="text-muted small">Base Wait: ~${qData.base_estimated_wait} mins | Adjusted Wait: ~${qData.adjusted_estimated_wait} mins</div>
+                  `;
+                }
                 box.innerHTML = `
                   <div><i class="fa-solid fa-users-line me-1 text-primary"></i>Queue Position: <strong>#${qData.queue_position}</strong></div>
                   <div><i class="fa-solid fa-user-clock me-1 text-warning"></i>Farmers Ahead: <strong>${qData.farmers_ahead}</strong></div>
                   <div><i class="fa-solid fa-hourglass-half me-1 text-info"></i>Est. Wait: <strong>~${qData.estimated_wait_minutes} mins</strong></div>
-                  <div class="ms-auto"><span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-solid fa-bolt me-1"></i>Realtime Live</span></div>
+                  ${delayInfo}
+                  <div class="ms-auto mt-1"><span class="badge bg-success-subtle text-success border border-success-subtle small"><i class="fa-solid fa-bolt me-1"></i>Realtime Live</span></div>
                 `;
               } else if (box) {
                 box.innerHTML = `<span class="text-muted">Queue status unavailable</span>`;
@@ -779,6 +788,11 @@
 
         queueSocket.on("payment_updated", (data) => {
           console.log("Realtime payment_updated event received:", data);
+          loadMyBookings();
+        });
+
+        queueSocket.on("delay_updated", (data) => {
+          console.log("Realtime delay_updated event received:", data);
           loadMyBookings();
         });
 

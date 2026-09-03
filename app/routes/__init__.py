@@ -22,6 +22,7 @@ from app.routes.bookings import bookings_bp
 from app.routes.queue import queue_bp
 from app.routes.procurement import procurement_bp
 from app.routes.payment import payment_bp
+from app.routes.delays import delays_bp
 
 __all__ = [
     "health_bp",
@@ -35,4 +36,5 @@ __all__ = [
     "queue_bp",
     "procurement_bp",
     "payment_bp",
+    "delays_bp",
 ]

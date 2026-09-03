@@ -103,6 +103,11 @@
           <i class="fa-solid fa-wheat-awn me-2"></i>Crops Catalogue
         </button>
       </li>
+      <li class="nav-item" role="presentation">
+        <button class="nav-link" id="delays-tab" data-bs-toggle="tab" data-bs-target="#delays-pane" type="button" role="tab" onclick="loadDelays()">
+          <i class="fa-solid fa-clock-rotate-left me-2"></i>Delay Management
+        </button>
+      </li>
     </ul>
 
     <div class="tab-content" id="adminTabContent">
@@ -162,6 +167,37 @@
               </thead>
               <tbody id="cropsTableBody">
                 <tr><td colspan="5" class="text-center text-muted py-4">Loading crops...</td></tr>
+              </tbody>
+            </table>
+        </div>
+      </div>
+
+      <!-- DELAYS TAB -->
+      <div class="tab-pane fade" id="delays-pane" role="tabpanel">
+        <div class="card card-custom p-4">
+          <div class="d-flex justify-content-between align-items-center mb-3">
+            <h5 class="fw-bold text-dark mb-0">Procurement Delays</h5>
+            <button class="btn btn-kp-primary" onclick="openCreateDelayModal()">
+              <i class="fa-solid fa-plus me-2"></i>Record New Delay
+            </button>
+          </div>
+
+          <div class="table-responsive">
+            <table class="table table-hover align-middle">
+              <thead class="table-light">
+                <tr>
+                  <th>ID</th>
+                  <th>Centre</th>
+                  <th>Date</th>
+                  <th>Slot ID</th>
+                  <th>Delay (Mins)</th>
+                  <th>Reason</th>
+                  <th>Status</th>
+                  <th class="text-end">Actions</th>
+                </tr>
+              </thead>
+              <tbody id="delaysTableBody">
+                <tr><td colspan="8" class="text-center text-muted py-4">Loading delays...</td></tr>
               </tbody>
             </table>
           </div>
@@ -514,10 +550,182 @@
       }
     }
 
+    // Load Delays
+    async function loadDelays() {
+      const token = getAuthToken();
+      const tbody = document.getElementById("delaysTableBody");
+      try {
+        const res = await fetch("/api/delays", {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.message || "Failed to load delays"}</td></tr>`;
+          return;
+        }
+        if (!data.delays || data.delays.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No delays recorded.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = data.delays.map(d => {
+          let badgeClass = "bg-warning text-dark";
+          if (d.status === "RESOLVED") badgeClass = "bg-success";
+          else if (d.status === "CANCELLED") badgeClass = "bg-secondary";
+
+          return `
+            <tr>
+              <td><strong>#${d.id}</strong></td>
+              <td>${d.centre_name || 'Centre #' + d.centre_id}</td>
+              <td>${d.delay_date}</td>
+              <td>${d.slot_id ? '#' + d.slot_id : '<span class="text-muted">Entire Centre</span>'}</td>
+              <td><span class="badge bg-danger-subtle text-danger border border-danger-subtle fw-bold">+${d.delay_minutes} mins</span></td>
+              <td>${d.reason || '<span class="text-muted">-</span>'}</td>
+              <td><span class="badge ${badgeClass}">${d.status}</span></td>
+              <td class="text-end">
+                ${d.status === 'ACTIVE' ? `
+                  <button class="btn btn-sm btn-outline-success me-1" onclick="resolveDelay(${d.id})"><i class="fa-solid fa-check me-1"></i>Resolve</button>
+                  <button class="btn btn-sm btn-outline-danger" onclick="cancelDelay(${d.id})"><i class="fa-solid fa-ban me-1"></i>Cancel</button>
+                ` : '<span class="text-muted small">No action</span>'}
+              </td>
+            </tr>
+          `;
+        }).join("");
+      } catch (e) {
+        tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">Error loading delays</td></tr>`;
+      }
+    }
+
+    // Open Create Delay Modal
+    async function openCreateDelayModal() {
+      const token = getAuthToken();
+      const select = document.getElementById("delayCentreId");
+      select.innerHTML = '<option value="">Loading centres...</option>';
+      const modal = new bootstrap.Modal(document.getElementById("delayModal"));
+      modal.show();
+
+      try {
+        const res = await fetch("/api/centres", {
+          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        });
+        const data = await res.json();
+        if (data.centres) {
+          select.innerHTML = data.centres.map(c => `<option value="${c.id}">${c.name} (${c.location})</option>`).join("");
+        }
+      } catch (e) {
+        select.innerHTML = '<option value="">Error loading centres</option>';
+      }
+
+      // Default date to today
+      const today = new Date().toISOString().split("T")[0];
+      document.getElementById("delayDate").value = today;
+    }
+
+    // Resolve Delay
+    async function resolveDelay(id) {
+      if (!confirm("Mark this delay as RESOLVED?")) return;
+      const token = getAuthToken();
+      const res = await fetch(`/api/delays/${id}`, {
+        method: "PUT",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify({ status: "RESOLVED" })
+      });
+      if (res.ok) {
+        showAlert("Delay marked as RESOLVED.", "success");
+        loadDelays();
+      }
+    }
+
+    // Cancel Delay
+    async function cancelDelay(id) {
+      if (!confirm("Cancel this delay record?")) return;
+      const token = getAuthToken();
+      const res = await fetch(`/api/delays/${id}`, {
+        method: "DELETE",
+        headers: { "Authorization": `Bearer ${token}` }
+      });
+      if (res.ok) {
+        showAlert("Delay cancelled.", "info");
+        loadDelays();
+      }
+    }
+
+    // Submit Delay Form
+    document.getElementById("delayForm").addEventListener("submit", async function(e) {
+      e.preventDefault();
+      const token = getAuthToken();
+      const payload = {
+        centre_id: parseInt(document.getElementById("delayCentreId").value),
+        delay_date: document.getElementById("delayDate").value,
+        slot_id: document.getElementById("delaySlotId").value ? parseInt(document.getElementById("delaySlotId").value) : null,
+        delay_minutes: parseInt(document.getElementById("delayMinutes").value),
+        reason: document.getElementById("delayReason").value.trim() || null
+      };
+
+      const res = await fetch("/api/delays", {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+
+      if (!res.ok) {
+        const alert = document.getElementById("delayModalAlert");
+        alert.innerText = data.messages ? data.messages.join(", ") : (data.message || "Failed to save delay");
+        alert.classList.remove("d-none");
+        return;
+      }
+
+      bootstrap.Modal.getInstance(document.getElementById("delayModal")).hide();
+      showAlert("Delay recorded successfully!", "success");
+      loadDelays();
+    });
+
     document.addEventListener("DOMContentLoaded", () => {
       loadCentres();
       loadCrops();
     });
   </script>
+
+  <!-- Delay Modal -->
+  <div class="modal fade" id="delayModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content border-0 shadow rounded-4">
+        <form id="delayForm">
+          <div class="modal-header bg-primary text-white border-0">
+            <h5 class="modal-title fw-bold" id="delayModalTitle"><i class="fa-solid fa-clock-rotate-left me-2"></i>Record Procurement Delay</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div id="delayModalAlert" class="alert alert-danger d-none"></div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Procurement Centre *</label>
+              <select id="delayCentreId" class="form-select" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Delay Date *</label>
+              <input type="date" id="delayDate" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Slot ID (Optional)</label>
+              <input type="number" id="delaySlotId" class="form-control" placeholder="Leave empty for entire centre/date">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Delay Minutes *</label>
+              <input type="number" id="delayMinutes" class="form-control" min="1" max="1440" required placeholder="e.g. 30">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Reason</label>
+              <textarea id="delayReason" class="form-control" rows="2" placeholder="e.g. Weighbridge equipment maintenance"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary">Save Delay</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
 </body>
 </html>

@@ -22,6 +22,7 @@ from app.models.slot import Slot, SlotStatus
 from app.models.booking import Booking, BookingStatus
 from app.models.procurement import Procurement, ProcurementStatus
 from app.models.payment import Payment, PaymentStatus
+from app.models.delay import Delay, DelayStatus
 
 __all__ = [
     "TimestampMixin",
@@ -39,4 +40,6 @@ __all__ = [
     "ProcurementStatus",
     "Payment",
     "PaymentStatus",
+    "Delay",
+    "DelayStatus",
 ]

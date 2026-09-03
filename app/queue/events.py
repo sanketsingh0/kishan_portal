@@ -85,6 +85,23 @@ def emit_payment_update(booking_id: int, centre_id: int | None = None, slot_date
         socketio.emit("payment_updated", payload, to=centre_room, namespace="/queue")
 
 
+def emit_delay_update(centre_id: int, slot_date, reason: str = "DELAY_UPDATED"):
+    """Emit lightweight delay_updated event post DB commit."""
+    if hasattr(slot_date, "isoformat"):
+        date_str = slot_date.isoformat()
+    else:
+        date_str = str(slot_date)
+
+    centre_room = f"centre_queue_{centre_id}_{date_str}"
+    payload = {
+        "centre_id": centre_id,
+        "slot_date": date_str,
+        "reason": reason,
+    }
+
+    socketio.emit("delay_updated", payload, to=centre_room, namespace="/queue")
+
+
 class QueueNamespace(Namespace):
     """SocketIO Namespace handler for /queue."""
 
