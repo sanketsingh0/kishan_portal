@@ -142,6 +142,18 @@ def create_procurement(booking_id: int, data: dict) -> Procurement:
     emit_procurement_update(booking.id, centre_id, slot_date, reason="PROCUREMENT_CREATED")
 
     try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_PROCUREMENT",
+            entity_type="PROCUREMENT",
+            entity_id=procurement.id,
+            description=f"Created procurement for booking #{booking.id} with status {status}",
+            metadata={"booking_id": booking.id, "quantity": quantity, "status": status},
+        )
+    except Exception:
+        pass
+
+    try:
         if booking.farmer and booking.farmer.user_id:
             from app.services.notification_service import create_notification
             from app.models import NotificationType
@@ -241,6 +253,18 @@ def update_procurement(booking_id: int, data: dict) -> Procurement:
     centre_id = booking.slot.centre_id if booking.slot else None
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_procurement_update(booking.id, centre_id, slot_date, reason="PROCUREMENT_UPDATED")
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_PROCUREMENT",
+            entity_type="PROCUREMENT",
+            entity_id=procurement.id,
+            description=f"Updated procurement for booking #{booking.id} to status {procurement.procurement_status}",
+            metadata={"booking_id": booking.id, "old_status": old_status, "new_status": procurement.procurement_status},
+        )
+    except Exception:
+        pass
 
     try:
         if status_changed and booking.farmer and booking.farmer.user_id:

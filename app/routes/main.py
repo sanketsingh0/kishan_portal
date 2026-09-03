@@ -27,3 +27,8 @@ def admin_management():
 @main_bp.get("/admin/slots")
 def admin_slots():
     return render_template("admin_slots.html")
+
+
+@main_bp.get("/admin/dashboard")
+def admin_dashboard():
+    return render_template("admin_dashboard.html")

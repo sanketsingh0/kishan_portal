@@ -24,6 +24,7 @@ from app.models.procurement import Procurement, ProcurementStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.delay import Delay, DelayStatus
 from app.models.notification import Notification, NotificationType, PushSubscription
+from app.models.audit_log import AuditLog
 
 __all__ = [
     "TimestampMixin",
@@ -46,4 +47,5 @@ __all__ = [
     "Notification",
     "NotificationType",
     "PushSubscription",
+    "AuditLog",
 ]

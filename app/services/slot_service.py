@@ -319,6 +319,18 @@ def create_slot(data: dict) -> Slot:
         db.session.rollback()
         raise SlotError(f"Database error creating slot: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_SLOT",
+            entity_type="SLOT",
+            entity_id=slot.id,
+            description=f"Created slot #{slot.id} for centre {slot.centre_id} on {slot.slot_date}",
+            metadata={"slot_id": slot.id, "centre_id": slot.centre_id, "slot_date": str(slot.slot_date)},
+        )
+    except Exception:
+        pass
+
     return slot
 
 
@@ -409,6 +421,18 @@ def update_slot(slot_id: int, data: dict) -> Slot:
         db.session.rollback()
         raise SlotError(f"Database error updating slot: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_SLOT",
+            entity_type="SLOT",
+            entity_id=slot.id,
+            description=f"Updated slot #{slot.id}",
+            metadata={"slot_id": slot.id, "status": slot.status},
+        )
+    except Exception:
+        pass
+
     return slot
 
 
@@ -424,5 +448,17 @@ def cancel_slot(slot_id: int) -> Slot:
     except Exception as exc:
         db.session.rollback()
         raise SlotError(f"Database error cancelling slot: {exc}")
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CANCEL_SLOT",
+            entity_type="SLOT",
+            entity_id=slot.id,
+            description=f"Cancelled slot #{slot.id}",
+            metadata={"slot_id": slot.id},
+        )
+    except Exception:
+        pass
 
     return slot

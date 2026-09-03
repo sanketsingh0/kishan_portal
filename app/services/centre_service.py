@@ -171,6 +171,18 @@ def create_centre(data: dict) -> Centre:
         db.session.rollback()
         raise CentreError(f"Database error creating centre: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_CENTRE",
+            entity_type="CENTRE",
+            entity_id=centre.id,
+            description=f"Created centre '{centre.name}' at location '{centre.location}'",
+            metadata={"centre_id": centre.id, "name": centre.name},
+        )
+    except Exception:
+        pass
+
     return centre
 
 
@@ -262,6 +274,18 @@ def update_centre(centre_id: int, data: dict) -> Centre:
         db.session.rollback()
         raise CentreError(f"Database error updating centre: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_CENTRE",
+            entity_type="CENTRE",
+            entity_id=centre.id,
+            description=f"Updated centre '{centre.name}'",
+            metadata={"centre_id": centre.id, "is_active": centre.is_active},
+        )
+    except Exception:
+        pass
+
     return centre
 
 
@@ -284,5 +308,17 @@ def deactivate_centre(centre_id: int) -> Centre:
     except Exception as exc:
         db.session.rollback()
         raise CentreError(f"Database error deactivating centre: {exc}")
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="DEACTIVATE_CENTRE",
+            entity_type="CENTRE",
+            entity_id=centre.id,
+            description=f"Deactivated centre '{centre.name}'",
+            metadata={"centre_id": centre.id},
+        )
+    except Exception:
+        pass
 
     return centre

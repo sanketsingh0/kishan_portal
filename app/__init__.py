@@ -70,6 +70,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.payment import payment_bp
     from app.routes.delays import delays_bp
     from app.routes.notifications import notifications_bp
+    from app.routes.admin import admin_bp
 
     app.register_blueprint(health_bp)
     app.register_blueprint(main_bp)
@@ -84,6 +85,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(payment_bp)
     app.register_blueprint(delays_bp)
     app.register_blueprint(notifications_bp)
+    app.register_blueprint(admin_bp)
 
     # --- CLI commands (flask seed-demo, ...) -----------------------------------
     register_cli(app)

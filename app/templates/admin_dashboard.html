@@ -1,0 +1,478 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Admin Dashboard & Analytics — KisanProcure</title>
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.0/dist/css/bootstrap.min.css">
+  <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/bootstrap-icons@1.11.1/font/bootstrap-icons.css">
+  <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+  <style>
+    :root {
+      --bg-dark: #0f172a;
+      --card-bg: #1e293b;
+      --border-color: #334155;
+      --accent-green: #10b981;
+      --accent-blue: #3b82f6;
+      --accent-amber: #f59e0b;
+      --accent-purple: #8b5cf6;
+      --text-light: #f8fafc;
+      --text-muted: #94a3b8;
+    }
+    body {
+      background-color: var(--bg-dark);
+      color: var(--text-light);
+      font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    }
+    .navbar {
+      background-color: var(--card-bg);
+      border-bottom: 1px solid var(--border-color);
+    }
+    .card-custom {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 20px;
+      margin-bottom: 20px;
+    }
+    .kpi-title {
+      font-size: 0.85rem;
+      color: var(--text-muted);
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+    .kpi-value {
+      font-size: 1.8rem;
+      font-weight: 700;
+      margin-top: 5px;
+    }
+    .filter-bar {
+      background-color: var(--card-bg);
+      border: 1px solid var(--border-color);
+      border-radius: 12px;
+      padding: 15px 20px;
+      margin-bottom: 25px;
+    }
+    .table-dark-custom {
+      --bs-table-bg: var(--card-bg);
+      --bs-table-color: var(--text-light);
+      --bs-table-border-color: var(--border-color);
+    }
+    .badge-status {
+      padding: 6px 12px;
+      border-radius: 20px;
+      font-weight: 600;
+      font-size: 0.75rem;
+    }
+  </style>
+</head>
+<body>
+
+  <!-- Navbar -->
+  <nav class="navbar navbar-expand-lg navbar-dark sticky-top px-4">
+    <div class="container-fluid">
+      <a class="navbar-brand fw-bold d-flex align-items-center gap-2" href="#">
+        <i class="bi bi-shield-lock-fill text-success fs-4"></i>
+        <span>KisanProcure Admin</span>
+      </a>
+      <div class="d-flex align-items-center gap-3">
+        <span class="badge bg-success-subtle text-success border border-success px-3 py-2">
+          <i class="bi bi-person-check-fill me-1"></i> Admin Portal
+        </span>
+      </div>
+    </div>
+  </nav>
+
+  <div class="container-fluid px-4 py-4">
+
+    <!-- Header -->
+    <div class="d-flex justify-content-between align-items-center mb-4">
+      <div>
+        <h2 class="fw-bold mb-1">Operational Analytics & Audit Logs</h2>
+        <p class="text-secondary mb-0">Real-time procurement performance, queue dynamics, and system audit trail.</p>
+      </div>
+      <button class="btn btn-outline-light btn-sm" onclick="loadAllDashboardData()">
+        <i class="bi bi-arrow-clockwise me-1"></i> Refresh Data
+      </button>
+    </div>
+
+    <!-- Filter Bar -->
+    <div class="filter-bar">
+      <form id="filterForm" class="row g-3 align-items-end" onsubmit="event.preventDefault(); loadAllDashboardData();">
+        <div class="col-md-3">
+          <label class="form-label text-secondary small fw-semibold">Start Date</label>
+          <input type="date" id="startDate" class="form-control form-control-dark bg-dark text-white border-secondary">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label text-secondary small fw-semibold">End Date</label>
+          <input type="date" id="endDate" class="form-control form-control-dark bg-dark text-white border-secondary">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-secondary small fw-semibold">Centre ID</label>
+          <input type="number" id="centreFilter" class="form-control bg-dark text-white border-secondary" placeholder="All Centres">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label text-secondary small fw-semibold">Crop ID</label>
+          <input type="number" id="cropFilter" class="form-control bg-dark text-white border-secondary" placeholder="All Crops">
+        </div>
+        <div class="col-md-2 d-grid">
+          <button type="submit" class="btn btn-primary fw-semibold">
+            <i class="bi bi-funnel-fill me-1"></i> Apply Filters
+          </button>
+        </div>
+      </form>
+    </div>
+
+    <!-- Top KPI Cards -->
+    <div class="row g-3 mb-4">
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-people me-1 text-primary"></i> Total / Active Farmers</div>
+          <div class="kpi-value text-primary" id="kpiFarmers">-- / --</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-building me-1 text-success"></i> Total / Active Centres</div>
+          <div class="kpi-value text-success" id="kpiCentres">-- / --</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-calendar-event me-1 text-warning"></i> Today's Bookings</div>
+          <div class="kpi-value text-warning" id="kpiTodaysBookings">--</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-check-circle me-1 text-info"></i> Today's Completed</div>
+          <div class="kpi-value text-info" id="kpiTodaysCompleted">--</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-clock-history me-1 text-purple"></i> Active Queue</div>
+          <div class="kpi-value text-purple" id="kpiActiveQueue">--</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-exclamation-triangle me-1 text-danger"></i> Today's Delay Mins</div>
+          <div class="kpi-value text-danger" id="kpiDelayMinutes">--</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-box-seam me-1 text-success"></i> Total Procured (Quintals)</div>
+          <div class="kpi-value text-success" id="kpiTotalQuantity">--</div>
+        </div>
+      </div>
+      <div class="col-md-3 col-6">
+        <div class="card-custom">
+          <div class="kpi-title"><i class="bi bi-currency-rupee me-1 text-primary"></i> Total Paid Amount</div>
+          <div class="kpi-value text-primary" id="kpiTotalPaid">--</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 1 -->
+    <div class="row g-4 mb-4">
+      <div class="col-md-8">
+        <div class="card-custom h-100">
+          <h5 class="fw-bold mb-3"><i class="bi bi-graph-up me-2 text-primary"></i>Booking Trend</h5>
+          <div style="height: 300px;">
+            <canvas id="bookingTrendChart"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-4">
+        <div class="card-custom h-100">
+          <h5 class="fw-bold mb-3"><i class="bi bi-pie-chart me-2 text-warning"></i>Booking Status Breakdown</h5>
+          <div style="height: 300px;">
+            <canvas id="bookingStatusChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Charts Row 2 -->
+    <div class="row g-4 mb-4">
+      <div class="col-md-6">
+        <div class="card-custom h-100">
+          <h5 class="fw-bold mb-3"><i class="bi bi-bar-chart-steps me-2 text-info"></i>Procurement Status Distribution</h5>
+          <div style="height: 280px;">
+            <canvas id="procurementStatusChart"></canvas>
+          </div>
+        </div>
+      </div>
+      <div class="col-md-6">
+        <div class="card-custom h-100">
+          <h5 class="fw-bold mb-3"><i class="bi bi-tree me-2 text-success"></i>Crop-wise Procurement Volume</h5>
+          <div style="height: 280px;">
+            <canvas id="cropProcurementChart"></canvas>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Audit Logs Section -->
+    <div class="card-custom mb-4">
+      <div class="d-flex justify-content-between align-items-center mb-3">
+        <h4 class="fw-bold mb-0"><i class="bi bi-journal-text me-2 text-primary"></i>System Audit Trail</h4>
+        <div class="d-flex gap-2">
+          <input type="text" id="auditActionFilter" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="Filter Action (e.g. CREATE_SLOT)">
+          <input type="text" id="auditEntityFilter" class="form-control form-control-sm bg-dark text-white border-secondary" placeholder="Filter Entity (e.g. SLOT)">
+          <button class="btn btn-sm btn-outline-primary" onclick="loadAuditLogs(1)">Filter Logs</button>
+        </div>
+      </div>
+
+      <div class="table-responsive">
+        <table class="table table-dark-custom align-middle text-sm mb-0">
+          <thead>
+            <tr>
+              <th>ID</th>
+              <th>Timestamp</th>
+              <th>User ID</th>
+              <th>Action</th>
+              <th>Entity</th>
+              <th>Description</th>
+            </tr>
+          </thead>
+          <tbody id="auditLogTbody">
+            <tr><td colspan="6" class="text-center text-muted">Loading audit logs...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <!-- Pagination -->
+      <div class="d-flex justify-content-between align-items-center mt-3">
+        <span class="text-secondary small" id="auditPageInfo">Page 1 of 1</span>
+        <div class="btn-group btn-group-sm">
+          <button class="btn btn-outline-secondary" id="prevAuditPageBtn" onclick="changeAuditPage(-1)" disabled>Previous</button>
+          <button class="btn btn-outline-secondary" id="nextAuditPageBtn" onclick="changeAuditPage(1)" disabled>Next</button>
+        </div>
+      </div>
+    </div>
+
+  </div>
+
+  <script>
+    let trendChart, statusChart, procChart, cropChart;
+    let currentAuditPage = 1;
+
+    async function fetchJSON(url) {
+      const res = await fetch(url);
+      if (!res.ok) throw new Error(`HTTP ${res.status}`);
+      return await res.json();
+    }
+
+    function buildFilterQuery() {
+      const params = new URLSearchParams();
+      const start = document.getElementById('startDate').value;
+      const end = document.getElementById('endDate').value;
+      const centre = document.getElementById('centreFilter').value;
+      const crop = document.getElementById('cropFilter').value;
+
+      if (start) params.append('start_date', start);
+      if (end) params.append('end_date', end);
+      if (centre) params.append('centre_id', centre);
+      if (crop) params.append('crop_id', crop);
+
+      return params.toString() ? `?${params.toString()}` : '';
+    }
+
+    async function loadAllDashboardData() {
+      const q = buildFilterQuery();
+
+      // 1. Overview KPIs
+      try {
+        const overview = await fetchJSON(`/api/admin/analytics/overview`);
+        document.getElementById('kpiFarmers').innerText = `${overview.total_farmers} / ${overview.active_farmers}`;
+        document.getElementById('kpiCentres').innerText = `${overview.total_centres} / ${overview.active_centres}`;
+        document.getElementById('kpiTodaysBookings').innerText = overview.todays_bookings;
+        document.getElementById('kpiTodaysCompleted').innerText = overview.todays_completed_procurements;
+        document.getElementById('kpiActiveQueue').innerText = overview.todays_active_queue;
+        document.getElementById('kpiDelayMinutes').innerText = `${overview.todays_delay_minutes} min`;
+      } catch (err) {
+        console.error("Overview load failed:", err);
+      }
+
+      // 2. Booking Analytics
+      try {
+        const bookings = await fetchJSON(`/api/admin/analytics/bookings${q}`);
+        renderBookingTrendChart(bookings.daily_trends);
+        renderBookingStatusChart(bookings.by_status);
+      } catch (err) {
+        console.error("Booking analytics load failed:", err);
+      }
+
+      // 3. Procurement Analytics
+      try {
+        const proc = await fetchJSON(`/api/admin/analytics/procurement${q}`);
+        document.getElementById('kpiTotalQuantity').innerText = proc.total_quantity;
+        renderProcurementStatusChart(proc.by_status);
+        renderCropProcurementChart(proc.by_crop);
+      } catch (err) {
+        console.error("Procurement analytics load failed:", err);
+      }
+
+      // 4. Payment Analytics
+      try {
+        const payment = await fetchJSON(`/api/admin/analytics/payments${q}`);
+        document.getElementById('kpiTotalPaid').innerText = `₹${payment.total_paid_amount.toLocaleString()}`;
+      } catch (err) {
+        console.error("Payment analytics load failed:", err);
+      }
+
+      // 5. Audit Logs
+      loadAuditLogs(1);
+    }
+
+    function renderBookingTrendChart(trends) {
+      const ctx = document.getElementById('bookingTrendChart').getContext('2d');
+      if (trendChart) trendChart.destroy();
+
+      trendChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+          labels: trends.map(t => t.date),
+          datasets: [{
+            label: 'Bookings',
+            data: trends.map(t => t.count),
+            borderColor: '#3b82f6',
+            backgroundColor: 'rgba(59, 130, 246, 0.15)',
+            fill: true,
+            tension: 0.3
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function renderBookingStatusChart(byStatus) {
+      const ctx = document.getElementById('bookingStatusChart').getContext('2d');
+      if (statusChart) statusChart.destroy();
+
+      statusChart = new Chart(ctx, {
+        type: 'doughnut',
+        data: {
+          labels: Object.keys(byStatus),
+          datasets: [{
+            data: Object.values(byStatus),
+            backgroundColor: ['#10b981', '#f59e0b', '#ef4444', '#3b82f6', '#6b7280']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { position: 'bottom', labels: { color: '#f8fafc' } } }
+        }
+      });
+    }
+
+    function renderProcurementStatusChart(byStatus) {
+      const ctx = document.getElementById('procurementStatusChart').getContext('2d');
+      if (procChart) procChart.destroy();
+
+      procChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: Object.keys(byStatus),
+          datasets: [{
+            label: 'Procurements',
+            data: Object.values(byStatus),
+            backgroundColor: ['#f59e0b', '#3b82f6', '#10b981', '#ef4444']
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    function renderCropProcurementChart(byCrop) {
+      const ctx = document.getElementById('cropProcurementChart').getContext('2d');
+      if (cropChart) cropChart.destroy();
+
+      cropChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+          labels: byCrop.map(c => c.crop_name),
+          datasets: [{
+            label: 'Quantity (Quintals)',
+            data: byCrop.map(c => c.total_quantity),
+            backgroundColor: '#10b981'
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: { legend: { display: false } },
+          scales: {
+            x: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' } },
+            y: { grid: { color: '#334155' }, ticks: { color: '#94a3b8' }, beginAtZero: true }
+          }
+        }
+      });
+    }
+
+    async function loadAuditLogs(page = 1) {
+      currentAuditPage = page;
+      const action = document.getElementById('auditActionFilter').value;
+      const entity = document.getElementById('auditEntityFilter').value;
+
+      let url = `/api/admin/audit-logs?page=${page}&per_page=10`;
+      if (action) url += `&action=${encodeURIComponent(action)}`;
+      if (entity) url += `&entity_type=${encodeURIComponent(entity)}`;
+
+      const tbody = document.getElementById('auditLogTbody');
+      try {
+        const res = await fetchJSON(url);
+        if (!res.audit_logs || res.audit_logs.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3">No audit log records found.</td></tr>`;
+        } else {
+          tbody.innerHTML = res.audit_logs.map(log => `
+            <tr>
+              <td>#${log.id}</td>
+              <td class="text-secondary small">${new Date(log.created_at).toLocaleString()}</td>
+              <td>${log.user_id ? `<span class="badge bg-secondary">User #${log.user_id}</span>` : '<span class="text-muted">System</span>'}</td>
+              <td><span class="badge bg-primary-subtle text-primary border border-primary">${log.action}</span></td>
+              <td><span class="badge bg-dark border border-secondary text-light">${log.entity_type}${log.entity_id ? ` #${log.entity_id}` : ''}</span></td>
+              <td>${log.description}</td>
+            </tr>
+          `).join('');
+        }
+
+        const totalPages = Math.ceil(res.total / res.per_page) || 1;
+        document.getElementById('auditPageInfo').innerText = `Page ${res.page} of ${totalPages} (Total ${res.total})`;
+        document.getElementById('prevAuditPageBtn').disabled = res.page <= 1;
+        document.getElementById('nextAuditPageBtn').disabled = res.page >= totalPages;
+      } catch (err) {
+        tbody.innerHTML = `<tr><td colspan="6" class="text-center text-danger py-3">Failed to load audit logs.</td></tr>`;
+      }
+    }
+
+    function changeAuditPage(delta) {
+      loadAuditLogs(currentAuditPage + delta);
+    }
+
+    document.addEventListener('DOMContentLoaded', () => {
+      loadAllDashboardData();
+    });
+  </script>
+</body>
+</html>

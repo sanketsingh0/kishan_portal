@@ -240,6 +240,18 @@ def create_delay(data: dict, current_user_id: int) -> Delay:
     emit_delay_update(centre_id, delay_date, reason="DELAY_CREATED")
     _notify_affected_farmers_for_delay(centre_id, delay_date, slot_id)
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_DELAY",
+            entity_type="DELAY",
+            entity_id=delay.id,
+            description=f"Created {delay_minutes}-minute delay for centre #{centre_id} on {delay_date}",
+            metadata={"centre_id": centre_id, "delay_minutes": delay_minutes, "status": status},
+        )
+    except Exception:
+        pass
+
     return delay
 
 
@@ -304,6 +316,18 @@ def update_delay(delay_id: int, data: dict) -> Delay:
     emit_delay_update(delay.centre_id, delay.delay_date, reason="DELAY_UPDATED")
     _notify_affected_farmers_for_delay(delay.centre_id, delay.delay_date, delay.slot_id)
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_DELAY",
+            entity_type="DELAY",
+            entity_id=delay.id,
+            description=f"Updated delay #{delay.id} for centre #{delay.centre_id}",
+            metadata={"centre_id": delay.centre_id, "status": delay.status},
+        )
+    except Exception:
+        pass
+
     return delay
 
 
@@ -314,5 +338,25 @@ def cancel_delay(delay_id: int) -> Delay:
         raise DelayNotFoundError(f"Delay {delay_id} not found.")
 
     delay.status = DelayStatus.CANCELLED
+    try:
+        db.session.commit()
+    except Exception as exc:
+        db.session.rollback()
+        raise DelayError(f"Database error while cancelling delay: {exc}")
+
+    emit_delay_update(delay.centre_id, delay.delay_date, reason="DELAY_CANCELLED")
+    _notify_affected_farmers_for_delay(delay.centre_id, delay.delay_date, delay.slot_id)
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CANCEL_DELAY",
+            entity_type="DELAY",
+            entity_id=delay.id,
+            description=f"Cancelled delay #{delay.id} for centre #{delay.centre_id}",
+            metadata={"centre_id": delay.centre_id},
+        )
+    except Exception:
+        pass
 
     return delay

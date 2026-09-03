@@ -121,6 +121,18 @@ def create_crop(data: dict) -> Crop:
         db.session.rollback()
         raise CropError(f"Database error creating crop: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_CROP",
+            entity_type="CROP",
+            entity_id=crop.id,
+            description=f"Created crop '{crop.name}'",
+            metadata={"crop_id": crop.id, "name": crop.name},
+        )
+    except Exception:
+        pass
+
     return crop
 
 
@@ -184,6 +196,18 @@ def update_crop(crop_id: int, data: dict) -> Crop:
         db.session.rollback()
         raise CropError(f"Database error updating crop: {exc}")
 
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_CROP",
+            entity_type="CROP",
+            entity_id=crop.id,
+            description=f"Updated crop '{crop.name}'",
+            metadata={"crop_id": crop.id, "is_active": crop.is_active},
+        )
+    except Exception:
+        pass
+
     return crop
 
 
@@ -206,5 +230,17 @@ def deactivate_crop(crop_id: int) -> Crop:
     except Exception as exc:
         db.session.rollback()
         raise CropError(f"Database error deactivating crop: {exc}")
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="DEACTIVATE_CROP",
+            entity_type="CROP",
+            entity_id=crop.id,
+            description=f"Deactivated crop '{crop.name}'",
+            metadata={"crop_id": crop.id},
+        )
+    except Exception:
+        pass
 
     return crop

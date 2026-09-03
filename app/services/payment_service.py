@@ -146,6 +146,18 @@ def create_payment(booking_id: int, data: dict) -> Payment:
     emit_payment_update(booking.id, centre_id, slot_date, reason="PAYMENT_CREATED")
 
     try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="CREATE_PAYMENT",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            description=f"Created payment for booking #{booking.id} with status {status}",
+            metadata={"booking_id": booking.id, "amount": float(amount) if amount else None, "status": status},
+        )
+    except Exception:
+        pass
+
+    try:
         if booking.farmer and booking.farmer.user_id:
             from app.services.notification_service import create_notification
             from app.models import NotificationType
@@ -245,6 +257,18 @@ def update_payment(booking_id: int, data: dict) -> Payment:
     centre_id = booking.slot.centre_id if booking.slot else None
     slot_date = booking.slot.slot_date if booking.slot else None
     emit_payment_update(booking.id, centre_id, slot_date, reason="PAYMENT_UPDATED")
+
+    try:
+        from app.services.audit_service import create_audit_log
+        create_audit_log(
+            action="UPDATE_PAYMENT",
+            entity_type="PAYMENT",
+            entity_id=payment.id,
+            description=f"Updated payment for booking #{booking.id} to status {new_status}",
+            metadata={"booking_id": booking.id, "old_status": old_status, "new_status": new_status},
+        )
+    except Exception:
+        pass
 
     try:
         if status_changed and booking.farmer and booking.farmer.user_id:
