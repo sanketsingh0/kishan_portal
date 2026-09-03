@@ -7,7 +7,7 @@ Endpoints:
     GET  /api/auth/me       -> get current user profile
 """
 
-from flask import Blueprint, g, jsonify, request
+from flask import Blueprint, current_app, g, jsonify, request
 
 from app.auth.decorators import login_required
 from app.auth.exceptions import (
@@ -122,21 +122,19 @@ def register():
             "message": "An account with this email already exists.",
         }), 409
     except UserSynchronizationError as exc:
-        from flask import current_app
         current_app.logger.error(f"User sync error: {exc}")
         return jsonify({
             "error": "Registration failed",
             "message": "Account created but profile setup incomplete.",
         }), 500
-    except AuthError as exc:
-        return jsonify({"error": "Registration failed", "message": str(exc)}), 400
     except SupabaseConfigError:
-        from flask import current_app
         current_app.logger.error("Supabase not configured")
         return jsonify({
             "error": "Service unavailable",
             "message": "Authentication service is not configured.",
         }), 503
+    except AuthError as exc:
+        return jsonify({"error": "Registration failed", "message": exc.message}), 400
 
     if not supabase_user:
         return jsonify({
@@ -179,20 +177,19 @@ def login():
             "error": "Authentication failed",
             "message": "Invalid email or password.",
         }), 401
+    except SupabaseConfigError:
+        current_app.logger.error("Supabase not configured")
+        return jsonify({
+            "error": "Service unavailable",
+            "message": "Authentication service is not configured.",
+        }), 503
     except AuthError as exc:
         if getattr(exc, "code", None) == "ACCOUNT_DISABLED":
             return jsonify({
                 "error": "Account disabled",
                 "message": exc.message,
             }), 401
-        return jsonify({"error": "Authentication failed", "message": str(exc)}), 401
-    except SupabaseConfigError:
-        from flask import current_app
-        current_app.logger.error("Supabase not configured")
-        return jsonify({
-            "error": "Service unavailable",
-            "message": "Authentication service is not configured.",
-        }), 503
+        return jsonify({"error": "Authentication failed", "message": exc.message}), 401
 
     if not supabase_user or not session:
         return jsonify({

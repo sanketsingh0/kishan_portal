@@ -14,6 +14,16 @@ def index():
     return render_template("index.html")
 
 
+@main_bp.get("/login")
+def login_page():
+    return render_template("auth/login.html")
+
+
+@main_bp.get("/register")
+def register_page():
+    return render_template("auth/register.html")
+
+
 @main_bp.get("/farmer/dashboard")
 def farmer_dashboard():
     return render_template("farmer_dashboard.html")

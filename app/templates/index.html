@@ -15,6 +15,12 @@
     .box { background: #fff; border: 1px solid #e0e7e3; border-radius: 10px;
            padding: 1.5rem; margin-top: 1.5rem; }
     a { color: #1b5e20; }
+    .auth-actions { display: flex; gap: 0.75rem; justify-content: center;
+                      margin-top: .1rem; flex-wrap: wrap; }
+    .btn-link { display: inline-block; background: #1b4332; color: #fff;
+                  text-decoration: none; padding: 0.55rem 1.2rem;
+                  border-radius: 8px; font-weight: 600; }
+    .btn-link:hover { background: #2d6a4f; color: #fff; }
     code { background: #eef3f0; padding: 0.1rem 0.4rem; border-radius: 4px; }
   </style>
 </head>
@@ -23,14 +29,27 @@
     <h1>KisanProcure</h1>
     <p class="tag">SIH Prototype &middot; Problem Statement 26032</p>
     <div class="box">
-      <p>The application foundation is up and running.</p>
-      <p>Check the API health endpoint: <a href="/api/health">/api/health</a></p>
-      <p>Farmer Dashboard: <a href="/farmer/dashboard">/farmer/dashboard</a></p>
-      <p>Admin Dashboard: <a href="/admin/dashboard">/admin/dashboard</a></p>
+      <p>Welcome to KisanProcure — the digital procurement platform for farmers.</p>
+      <div id="guestActions" class="auth-actions">
+        <a href="/login" class="btn-link">Login</a>
+        <a href="/register" class="btn-link">Register as Farmer</a>
+      </div>
+      <div id="authActions" class="auth-actions" style="display:none">
+        <a href="/farmer/dashboard" class="btn-link">Farmer Dashboard</a>
+        <a href="/admin/dashboard" class="btn-link">Admin Dashboard</a>
+      </div>
+      <p class="health-link">System status: <a href="/api/health">/api/health</a></p>
     </div>
   </main>
 
   <script>
+    // If already authenticated, show dashboards instead of login/register.
+    if (localStorage.getItem("kp_access_token")) {
+      const guest = document.getElementById("guestActions");
+      const auth = document.getElementById("authActions");
+      if (guest) guest.style.display = "none";
+      if (auth) auth.style.display = "flex";
+    }
     if ('serviceWorker' in navigator) {
       window.addEventListener('load', () => {
         navigator.serviceWorker.register('/static/service-worker.js').catch(() => {});

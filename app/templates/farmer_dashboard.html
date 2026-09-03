@@ -374,14 +374,13 @@
 
   <!-- Bootstrap 5 JS Bundle -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Shared auth helpers (token storage + 401 redirect) -->
+  <script src="/static/js/auth.js"></script>
 
   <script>
     let selectedSlotForBooking = null;
 
-    // Token Helper
-    function getAuthToken() {
-      return localStorage.getItem("kp_access_token") || "";
-    }
+    // Token helper (window.getAuthToken) is provided by /static/js/auth.js
 
     function showAlert(msg, type = "success") {
       const alertBox = document.getElementById("alertBox");
@@ -397,16 +396,8 @@
 
     // Load Farmer Profile
     async function loadFarmerProfile() {
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/farmers/me", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
-
-        if (res.status === 401) {
-          showAlert("Authentication required. Please login first.", "warning");
-          return;
-        }
+        const res = await window.KP.authFetch("/api/farmers/me");
 
         const data = await res.json();
         if (!res.ok) {
@@ -452,13 +443,11 @@
         pincode: document.getElementById("inputPincode").value.trim() || null,
       };
 
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/farmers/me", {
+        const res = await window.KP.authFetch("/api/farmers/me", {
           method: "PUT",
           headers: {
-            "Content-Type": "application/json",
-            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+            "Content-Type": "application/json"
           },
           body: JSON.stringify(payload)
         });
@@ -487,12 +476,9 @@
 
     // Load Available Procurement Slots
     async function loadAvailableSlots() {
-      const token = getAuthToken();
       const container = document.getElementById("farmerSlotsContainer");
       try {
-        const res = await fetch("/api/slots", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/slots");
         const data = await res.json();
         if (!res.ok || !data.slots || data.slots.length === 0) {
           container.innerHTML = `<div class="col-12 text-center text-muted py-3 border rounded-3 bg-white">No upcoming procurement slots currently open.</div>`;
@@ -556,13 +542,11 @@
       const modalAlert = document.getElementById("bookingModalAlert");
       modalAlert.classList.add("d-none");
 
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/bookings", {
+        const res = await window.KP.authFetch("/api/bookings", {
           method: "POST",
           headers: {
-            "Content-Type": "application/json",
-            ...(token ? { "Authorization": `Bearer ${token}` } : {})
+            "Content-Type": "application/json"
           },
           body: JSON.stringify({ slot_id: selectedSlotForBooking.id })
         });
@@ -593,12 +577,10 @@
 
     // Load Farmer Bookings
     async function loadMyBookings() {
-      const token = getAuthToken();
+      const token = window.getAuthToken();
       const container = document.getElementById("myBookingsContainer");
       try {
-        const res = await fetch("/api/bookings/my", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/bookings/my");
 
         const data = await res.json();
         if (!res.ok || !data.bookings || data.bookings.length === 0) {
@@ -673,9 +655,7 @@
           // 1. Queue Status
           if (b.status === "CONFIRMED" || b.status === "PENDING") {
             try {
-              const qRes = await fetch(`/api/queue/my/${b.id}`, {
-                headers: token ? { "Authorization": `Bearer ${token}` } : {}
-              });
+              const qRes = await window.KP.authFetch(`/api/queue/my/${b.id}`);
               const qData = await qRes.json();
               const box = document.getElementById(`queue-status-box-${b.id}`);
               if (box && qRes.ok && qData.is_active_queue) {
@@ -704,9 +684,7 @@
 
           // 2. Procurement Status
           try {
-            const pRes = await fetch(`/api/procurement/my/${b.id}`, {
-              headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
+            const pRes = await window.KP.authFetch(`/api/procurement/my/${b.id}`);
             const pData = await pRes.json();
             const pBox = document.getElementById(`procurement-status-box-${b.id}`);
             if (pBox && pRes.ok && pData.procurement) {
@@ -738,9 +716,7 @@
 
           // 3. Payment Status
           try {
-            const payRes = await fetch(`/api/payment/my/${b.id}`, {
-              headers: token ? { "Authorization": `Bearer ${token}` } : {}
-            });
+            const payRes = await window.KP.authFetch(`/api/payment/my/${b.id}`);
             const payData = await payRes.json();
             const payBox = document.getElementById(`payment-status-box-${b.id}`);
             if (payBox && payRes.ok && payData.payment) {
@@ -838,13 +814,11 @@
 
     // Notification UI & API Functions
     async function loadNotifications() {
-      const token = getAuthToken();
+      const token = window.getAuthToken();
       if (!token) return;
 
       try {
-        const res = await fetch("/api/notifications?limit=15", {
-          headers: { "Authorization": `Bearer ${token}` }
-        });
+        const res = await window.KP.authFetch("/api/notifications?limit=15");
         if (!res.ok) return;
 
         const data = await res.json();
@@ -880,11 +854,9 @@
     }
 
     async function markNotificationReadAction(notifId) {
-      const token = getAuthToken();
       try {
-        const res = await fetch(`/api/notifications/${notifId}/read`, {
-          method: "PUT",
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        const res = await window.KP.authFetch(`/api/notifications/${notifId}/read`, {
+          method: "PUT"
         });
         if (res.ok) {
           loadNotifications();
@@ -895,11 +867,9 @@
     }
 
     async function markAllNotificationsReadAction() {
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/notifications/read-all", {
-          method: "PUT",
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        const res = await window.KP.authFetch("/api/notifications/read-all", {
+          method: "PUT"
         });
         if (res.ok) {
           loadNotifications();
@@ -937,11 +907,9 @@
     async function cancelBookingAction(bookingId) {
       if (!confirm(`Are you sure you want to cancel booking #${bookingId}?`)) return;
 
-      const token = getAuthToken();
       try {
-        const res = await fetch(`/api/bookings/${bookingId}/cancel`, {
-          method: "PUT",
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
+        const res = await window.KP.authFetch(`/api/bookings/${bookingId}/cancel`, {
+          method: "PUT"
         });
 
         const data = await res.json();
@@ -961,8 +929,16 @@
     }
 
     document.getElementById("logoutBtn").addEventListener("click", function() {
-      localStorage.removeItem("kp_access_token");
-      showAlert("Logged out successfully.", "info");
+      // Best-effort server-side token revocation (requires service-role key).
+      const token = window.getAuthToken();
+      if (token) {
+        fetch("/api/auth/logout", {
+          method: "POST",
+          headers: { "Authorization": `Bearer ${token}` }
+        }).catch(() => {});
+      }
+      window.KP.clearTokens();
+      window.location.href = "/login";
     });
 
     // Initial Load

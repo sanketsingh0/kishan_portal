@@ -42,5 +42,10 @@ Thumbs.db
 # --- Logs ---------------------------------------------------------------------------
 *.log
 
+# --- Node.js / frontend tooling (not used by the Flask app) ------------------------
+node_modules/
+package.json
+package-lock.json
+
 # --- Migration runtime artifacts (keep the Python scripts themselves committed) -----
 migrations/versions/*.pyc

@@ -197,13 +197,11 @@
   </div>
 
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Shared auth helpers (token storage + 401 redirect) -->
+  <script src="/static/js/auth.js"></script>
   <script>
     let centresList = [];
     let cropsList = [];
-
-    function getAuthToken() {
-      return localStorage.getItem("kp_access_token") || "";
-    }
 
     function showAlert(msg, type = "success") {
       const box = document.getElementById("alertBox");
@@ -213,8 +211,7 @@
     }
 
     async function loadCentresAndCrops() {
-      const token = getAuthToken();
-      const headers = token ? { "Authorization": `Bearer ${token}` } : {};
+      const headers = window.KP.buildAuthHeaders();
 
       try {
         const [cRes, crRes] = await Promise.all([
@@ -243,7 +240,6 @@
     }
 
     async function loadSlots() {
-      const token = getAuthToken();
       const cId = document.getElementById("filterCentre").value;
       const crId = document.getElementById("filterCrop").value;
       const d = document.getElementById("filterDate").value;
@@ -259,7 +255,7 @@
       const tbody = document.getElementById("slotsTableBody");
 
       try {
-        const res = await fetch(url, { headers: token ? { "Authorization": `Bearer ${token}` } : {} });
+        const res = await window.KP.authFetch(url);
         const data = await res.json();
         if (!res.ok) {
           tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${data.message || 'Error loading slots'}</td></tr>`;
@@ -342,13 +338,12 @@
         status: document.getElementById("slotStatus").value,
       };
 
-      const token = getAuthToken();
       const url = id ? `/api/slots/${id}` : "/api/slots";
       const method = id ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await window.KP.authFetch(url, {
         method: method,
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -367,10 +362,8 @@
 
     async function cancelSlot(id) {
       if (!confirm("Are you sure you want to cancel this procurement slot?")) return;
-      const token = getAuthToken();
-      const res = await fetch(`/api/slots/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
+      const res = await window.KP.authFetch(`/api/slots/${id}`, {
+        method: "DELETE"
       });
       if (res.ok) {
         showAlert("Slot cancelled.", "warning");

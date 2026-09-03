@@ -258,12 +258,14 @@
 
   </div>
 
+  <!-- Shared auth helpers (token storage + 401 redirect) -->
+  <script src="/static/js/auth.js"></script>
   <script>
     let trendChart, statusChart, procChart, cropChart;
     let currentAuditPage = 1;
 
     async function fetchJSON(url) {
-      const res = await fetch(url);
+      const res = await window.KP.authFetch(url);
       if (!res.ok) throw new Error(`HTTP ${res.status}`);
       return await res.json();
     }

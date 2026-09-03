@@ -1,5 +1,7 @@
 """Smoke tests for the configuration system."""
 
+import importlib
+
 from app import create_app
 
 
@@ -23,3 +25,36 @@ def test_unknown_config_is_rejected():
         assert "Unknown configuration" in str(exc)
     else:
         raise AssertionError("Expected ValueError for unknown config name")
+
+
+def test_supabase_legacy_key_names_supported(monkeypatch):
+    """Legacy SUPABASE_PUBLISHABLE_KEY / SUPABASE_SECRET_KEY names work."""
+    import config as config_module
+
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "legacy-anon-key")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "legacy-service-role-key")
+    monkeypatch.delenv("SUPABASE_ANON_KEY", raising=False)
+    monkeypatch.delenv("SUPABASE_SERVICE_ROLE_KEY", raising=False)
+
+    importlib.reload(config_module)
+
+    assert config_module.Config.SUPABASE_ANON_KEY == "legacy-anon-key"
+    assert config_module.Config.SUPABASE_SERVICE_ROLE_KEY == "legacy-service-role-key"
+    assert config_module.Config.SUPABASE_URL == "https://project.supabase.co"
+
+
+def test_supabase_canonical_key_names_take_precedence(monkeypatch):
+    """Canonical names win when both naming schemes are present."""
+    import config as config_module
+
+    monkeypatch.setenv("SUPABASE_URL", "https://project.supabase.co")
+    monkeypatch.setenv("SUPABASE_ANON_KEY", "canonical-anon-key")
+    monkeypatch.setenv("SUPABASE_PUBLISHABLE_KEY", "legacy-anon-key")
+    monkeypatch.setenv("SUPABASE_SERVICE_ROLE_KEY", "canonical-service-key")
+    monkeypatch.setenv("SUPABASE_SECRET_KEY", "legacy-service-key")
+
+    importlib.reload(config_module)
+
+    assert config_module.Config.SUPABASE_ANON_KEY == "canonical-anon-key"
+    assert config_module.Config.SUPABASE_SERVICE_ROLE_KEY == "canonical-service-key"

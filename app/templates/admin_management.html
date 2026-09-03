@@ -299,12 +299,10 @@
 
   <!-- JS -->
   <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+  <!-- Shared auth helpers (token storage + 401 redirect) -->
+  <script src="/static/js/auth.js"></script>
 
   <script>
-    function getAuthToken() {
-      return localStorage.getItem("kp_access_token") || "";
-    }
-
     function showAlert(msg, type = "success") {
       const box = document.getElementById("alertBox");
       document.getElementById("alertMsg").innerText = msg;
@@ -314,11 +312,8 @@
 
     // Load Centres
     async function loadCentres() {
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/centres?all=true", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/centres?all=true");
         const data = await res.json();
         const tbody = document.getElementById("centresTableBody");
 
@@ -364,11 +359,8 @@
 
     // Load Crops
     async function loadCrops() {
-      const token = getAuthToken();
       try {
-        const res = await fetch("/api/crops?all=true", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/crops?all=true");
         const data = await res.json();
         const tbody = document.getElementById("cropsTableBody");
 
@@ -466,13 +458,12 @@
         is_active: document.getElementById("centreActive").checked,
       };
 
-      const token = getAuthToken();
       const url = id ? `/api/centres/${id}` : "/api/centres";
       const method = id ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await window.KP.authFetch(url, {
         method: method,
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -499,13 +490,12 @@
         is_active: document.getElementById("cropActive").checked,
       };
 
-      const token = getAuthToken();
       const url = id ? `/api/crops/${id}` : "/api/crops";
       const method = id ? "PUT" : "POST";
 
-      const res = await fetch(url, {
+      const res = await window.KP.authFetch(url, {
         method: method,
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await res.json();
@@ -525,10 +515,8 @@
     // Deactivate Centre
     async function deactivateCentre(id) {
       if (!confirm("Are you sure you want to deactivate this procurement centre?")) return;
-      const token = getAuthToken();
-      const res = await fetch(`/api/centres/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
+      const res = await window.KP.authFetch(`/api/centres/${id}`, {
+        method: "DELETE"
       });
       if (res.ok) {
         showAlert("Centre deactivated.", "warning");
@@ -539,10 +527,8 @@
     // Deactivate Crop
     async function deactivateCrop(id) {
       if (!confirm("Are you sure you want to deactivate this crop?")) return;
-      const token = getAuthToken();
-      const res = await fetch(`/api/crops/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
+      const res = await window.KP.authFetch(`/api/crops/${id}`, {
+        method: "DELETE"
       });
       if (res.ok) {
         showAlert("Crop deactivated.", "warning");
@@ -552,12 +538,9 @@
 
     // Load Delays
     async function loadDelays() {
-      const token = getAuthToken();
       const tbody = document.getElementById("delaysTableBody");
       try {
-        const res = await fetch("/api/delays", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/delays");
         const data = await res.json();
         if (!res.ok) {
           tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4">${data.message || "Failed to load delays"}</td></tr>`;
@@ -597,16 +580,13 @@
 
     // Open Create Delay Modal
     async function openCreateDelayModal() {
-      const token = getAuthToken();
       const select = document.getElementById("delayCentreId");
       select.innerHTML = '<option value="">Loading centres...</option>';
       const modal = new bootstrap.Modal(document.getElementById("delayModal"));
       modal.show();
 
       try {
-        const res = await fetch("/api/centres", {
-          headers: token ? { "Authorization": `Bearer ${token}` } : {}
-        });
+        const res = await window.KP.authFetch("/api/centres");
         const data = await res.json();
         if (data.centres) {
           select.innerHTML = data.centres.map(c => `<option value="${c.id}">${c.name} (${c.location})</option>`).join("");
@@ -623,10 +603,9 @@
     // Resolve Delay
     async function resolveDelay(id) {
       if (!confirm("Mark this delay as RESOLVED?")) return;
-      const token = getAuthToken();
-      const res = await fetch(`/api/delays/${id}`, {
+      const res = await window.KP.authFetch(`/api/delays/${id}`, {
         method: "PUT",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ status: "RESOLVED" })
       });
       if (res.ok) {
@@ -638,10 +617,8 @@
     // Cancel Delay
     async function cancelDelay(id) {
       if (!confirm("Cancel this delay record?")) return;
-      const token = getAuthToken();
-      const res = await fetch(`/api/delays/${id}`, {
-        method: "DELETE",
-        headers: { "Authorization": `Bearer ${token}` }
+      const res = await window.KP.authFetch(`/api/delays/${id}`, {
+        method: "DELETE"
       });
       if (res.ok) {
         showAlert("Delay cancelled.", "info");
@@ -652,7 +629,6 @@
     // Submit Delay Form
     document.getElementById("delayForm").addEventListener("submit", async function(e) {
       e.preventDefault();
-      const token = getAuthToken();
       const payload = {
         centre_id: parseInt(document.getElementById("delayCentreId").value),
         delay_date: document.getElementById("delayDate").value,
@@ -661,9 +637,9 @@
         reason: document.getElementById("delayReason").value.trim() || null
       };
 
-      const res = await fetch("/api/delays", {
+      const res = await window.KP.authFetch("/api/delays", {
         method: "POST",
-        headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
+        headers: { "Content-Type": "application/json" },
         body: JSON.stringify(payload)
       });
       const data = await res.json();

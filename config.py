@@ -40,11 +40,20 @@ class Config:
         "pool_pre_ping": True,
     }
 
-    # --- Supabase (Auth); used once the authentication module is implemented ---
+    # --- Supabase (Auth) ------------------------------------------------------
+    # Canonical names are preferred; legacy aliases (
+    # SUPABASE_PUBLISHABLE_KEY / SUPABASE_SECRET_KEY) are also supported so
+    # existing `.env` files keep working without changes.
     SUPABASE_URL = os.getenv("SUPABASE_URL")
-    SUPABASE_ANON_KEY = os.getenv("SUPABASE_ANON_KEY")
-    SUPABASE_SERVICE_ROLE_KEY = os.getenv("SUPABASE_SERVICE_ROLE_KEY")
-    SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", os.getenv("SUPABASE_ANON_KEY", ""))
+    SUPABASE_ANON_KEY = (
+        os.getenv("SUPABASE_ANON_KEY")
+        or os.getenv("SUPABASE_PUBLISHABLE_KEY")
+    )
+    SUPABASE_SERVICE_ROLE_KEY = (
+        os.getenv("SUPABASE_SERVICE_ROLE_KEY")
+        or os.getenv("SUPABASE_SECRET_KEY")
+    )
+    SUPABASE_JWT_AUDIENCE = os.getenv("SUPABASE_JWT_AUDIENCE", "") or SUPABASE_ANON_KEY
 
     # --- JWT (verification of Supabase-issued tokens) ---
     JWT_ALGORITHM = os.getenv("JWT_ALGORITHM", "HS256")
@@ -59,7 +68,10 @@ class Config:
 class DevelopmentConfig(Config):
     ENV = "development"
     DEBUG = True
-    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL", _default_dev_database_uri())
+    # Treat an empty DATABASE_URL as unset so the documented local workflow
+    # ("leave DATABASE_URL blank to use SQLite") works even after copying
+    # .env.example -> .env (which sets an empty placeholder).
+    SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL") or _default_dev_database_uri()
 
 
 class TestingConfig(Config):

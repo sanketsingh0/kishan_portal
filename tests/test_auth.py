@@ -142,6 +142,35 @@ class TestLogin:
         assert "disabled" in resp.get_json()["error"].lower() or "disabled" in resp.get_json()["message"].lower()
 
 
+class TestSupabaseConfigErrors:
+    """Configuration failures must return HTTP 503 (not 400/401 machinery)."""
+
+    def test_login_config_failure_returns_503(self, client):
+        from app.auth.exceptions import SupabaseConfigError
+
+        with patch("app.auth.service.get_supabase_client", side_effect=SupabaseConfigError()):
+            resp = client.post("/api/auth/login", json={"email": "a@b.com", "password": "password123"})
+
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["error"] == "Service unavailable"
+        assert "not configured" in data["message"].lower()
+
+    def test_register_config_failure_returns_503(self, client):
+        from app.auth.exceptions import SupabaseConfigError
+
+        with patch("app.auth.service.get_supabase_client", side_effect=SupabaseConfigError()):
+            resp = client.post("/api/auth/register", json={
+                "email": "a@b.com", "password": "password123", "name": "Test Farmer",
+            })
+
+        assert resp.status_code == 503
+        data = resp.get_json()
+        assert data["error"] == "Service unavailable"
+        assert "not configured" in data["message"].lower()
+        # Generic safe message only - no key names or secret values.
+
+
 class TestJWTVerification:
     """Tests for JWT token verification in protected endpoints."""
 

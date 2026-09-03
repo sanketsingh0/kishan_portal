@@ -1,0 +1,224 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="theme-color" content="#10b981">
+  <link rel="manifest" href="/static/manifest.json">
+  <title>Login - KisanProcure</title>
+  <!-- Bootstrap 5 CSS -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --kp-primary: #1b4332;
+      --kp-primary-light: #2d6a4f;
+      --kp-accent: #52b788;
+      --kp-bg: #f4f7f5;
+    }
+    body {
+      font-family: 'Outfit', -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif;
+      background-color: var(--kp-bg);
+      color: #212529;
+      min-height: 100vh;
+    }
+    .auth-bg {
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 1.5rem;
+      background: linear-gradient(135deg, #f4f7f5 0%, #d8eee2 100%);
+    }
+    .auth-card {
+      max-width: 440px;
+      width: 100%;
+      border: none;
+      border-radius: 18px;
+      box-shadow: 0 12px 32px rgba(27, 67, 50, 0.14);
+    }
+    .auth-header {
+      background: linear-gradient(135deg, var(--kp-primary), var(--kp-primary-light));
+      color: #fff;
+      border-radius: 18px 18px 0 0;
+      padding: 1.75rem 1.5rem;
+      text-align: center;
+    }
+    .auth-header h1 {
+      font-size: 1.5rem;
+      font-weight: 700;
+      margin-bottom: 0.25rem;
+    }
+    .auth-header p {
+      margin-bottom: 0;
+      opacity: 0.85;
+      font-size: 0.95rem;
+    }
+    .btn-kp-primary {
+      background-color: var(--kp-primary);
+      color: #fff;
+      border-radius: 10px;
+      font-weight: 600;
+      padding: 0.65rem 1.2rem;
+      border: none;
+      width: 100%;
+      transition: background-color 0.2s ease;
+    }
+    .btn-kp-primary:hover, .btn-kp-primary:focus {
+      background-color: var(--kp-primary-light);
+      color: #fff;
+    }
+    .btn-kp-primary:disabled {
+      background-color: #9db8a8;
+      cursor: not-allowed;
+    }
+    .form-label {
+      font-weight: 600;
+      font-size: 0.9rem;
+    }
+    a.link-kp {
+      color: var(--kp-primary);
+      font-weight: 600;
+      text-decoration: none;
+    }
+    a.link-kp:hover {
+      text-decoration: underline;
+    }
+  </style>
+</head>
+<body>
+  <div class="auth-bg">
+    <div class="card auth-card">
+      <div class="auth-header">
+        <h1>KisanProcure</h1>
+        <p>Sign in to your account</p>
+      </div>
+      <div class="card-body p-4">
+        <!-- Error / message area -->
+        <div id="loginAlert" class="alert d-none alert-dismissible fade show" role="alert" aria-live="assertive">
+          <span id="loginAlertMsg"></span>
+          <button type="button" class="btn-close" onclick="hideAlert()" aria-label="Close"></button>
+        </div>
+
+        <form id="loginForm" novalidate>
+          <div class="mb-3">
+            <label for="email" class="form-label">Email address</label>
+            <input type="email" class="form-control form-control-lg" id="email" name="email" autocomplete="email" required autofocus placeholder="you@example.com">
+          </div>
+          <div class="mb-4">
+            <label for="password" class="form-label">Password</label>
+            <input type="password" class="form-control form-control-lg" id="password" name="password" autocomplete="current-password" required placeholder="Enter your password">
+          </div>
+          <button type="submit" id="loginBtn" class="btn btn-kp-primary btn-lg">
+            <i class="fa-solid fa-right-to-bracket me-2"></i>Sign In
+          </button>
+        </form>
+
+        <p class="text-center mt-4 mb-0 small text-muted">
+          New to KisanProcure?
+          <a href="/register" class="link-kp">Register as Farmer</a>
+        </p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+function hideAlert() {
+      const box = document.getElementById("loginAlert");
+      box.classList.add("d-none");
+    }
+
+    function showAlert(msg, type) {
+      const box = document.getElementById("loginAlert");
+      const msgEl = document.getElementById("loginAlertMsg");
+      box.className = `alert alert-${type} alert-dismissible fade show`;
+      msgEl.innerText = msg;
+      box.classList.remove("d-none");
+    }
+
+    function getSafeNextParam() {
+      try {
+        const params = new URLSearchParams(window.location.search);
+        const next = params.get("next");
+        // Only allow local absolute paths (e.g. /farmer/dashboard).
+        // Block protocol-relative ("//host") and backslash tricks.
+
+        if (next && next.startsWith("/") && !next.startsWith("//") && !next.includes("\\")) {
+          return next;
+        }
+      } catch (e) { /* ignore malformed query */ }
+      return null;
+    }
+
+    function getRedirectDestination(role) {
+      const next = getSafeNextParam();
+      if (next) return next;
+      if (role === "ADMIN") return "/admin/dashboard";
+      if (role === "STAFF") return "/admin/management";
+      return "/farmer/dashboard";
+    }
+
+    document.getElementById("loginForm").addEventListener("submit", async function (e) {
+      e.preventDefault();
+      hideAlert();
+
+      const email = document.getElementById("email").value.trim();
+      const password = document.getElementById("password").value;
+
+      if (!email || !password) {
+        showAlert("Please enter your email and password.", "warning");
+        return;
+      }
+
+      const btn = document.getElementById("loginBtn");
+      const originalLabel = btn.innerHTML;
+      btn.disabled = true;
+      btn.innerHTML = `<span class="spinner-border spinner-border-sm me-2" aria-hidden="true"></span>Signing in...`;
+
+      try {
+        const res = await fetch("/api/auth/login", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ email: email, password: password })
+        });
+
+        const data = await res.json();
+
+        if (!res.ok) {
+          if (res.status === 503) {
+            showAlert("Authentication service is temporarily unavailable. Please try again later.", "danger");
+          } else if (res.status === 401) {
+            showAlert(data.message || "Invalid email or password.", "danger");
+          } else {
+            showAlert(data.message || data.error || "Login failed. Please try again.", "danger");
+          }
+          return;
+        }
+
+        const user = data.user || {};
+        const accessToken = user.access_token;
+
+        if (!accessToken) {
+          showAlert("Login failed: no session was returned.", "danger");
+          return;
+        }
+
+        // Store tokens (never the password).
+
+        localStorage.setItem("kp_access_token", accessToken);
+        if (user.refresh_token) {
+          localStorage.setItem("kp_refresh_token", user.refresh_token);
+        }
+
+        window.location.href = getRedirectDestination(user.role);
+      } catch (err) {
+        console.error("Login error:", err);
+        showAlert("Network error. Please check your connection and try again.", "danger");
+      } finally {
+        btn.disabled = false;
+        btn.innerHTML = originalLabel;
+      }
+    });
+  </script>
+</body>
+</html>

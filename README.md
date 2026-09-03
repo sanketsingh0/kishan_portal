@@ -73,10 +73,19 @@ Secrets and configurations are managed via `.env` (never committed):
 |---|---|---|
 | `FLASK_ENV` | Application mode (`development`, `testing`, `production`) | `development` |
 | `SECRET_KEY` | Flask session signing secret | `dev-only-change-me` |
-| `DATABASE_URL` | SQLAlchemy URI (SQLite local / PostgreSQL production) | SQLite `instance/dev.db` |
+| `HOST` | Host for `python run.py` (local dev only) | `127.0.0.1` |
+| `PORT` | Port for `python run.py` (local dev only) | `5000` |
+| `DATABASE_URL` | SQLAlchemy URI (SQLite local / PostgreSQL production) | SQLite `instance/kisanprocure.db` |
 | `SOCKETIO_ASYNC_MODE` | Socket.IO engine mode (`threading`, `eventlet`, `gevent`) | `threading` |
+| `CORS_ALLOWED_ORIGINS` | Comma-separated allowed Socket.IO origins | `*` |
+| `SUPABASE_URL` | Supabase project URL (safe for frontend) | Empty |
+| `SUPABASE_ANON_KEY` | Supabase anonymous key (safe for frontend; legacy alias `SUPABASE_PUBLISHABLE_KEY`) | Empty |
+| `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (**server-only**; legacy alias `SUPABASE_SECRET_KEY`) | Empty |
+| `JWT_ALGORITHM` | Algorithm used to verify Supabase JWTs | `HS256` |
+| `JWT_EXP` | JWT expiry window (seconds) | `3600` |
 | `VAPID_PUBLIC_KEY` | Browser Web Push Public Key | Placeholder |
 | `VAPID_PRIVATE_KEY` | Browser Web Push Private Key | Placeholder |
+| `VAPID_CLAIM_EMAIL` | Web Push contact email (`mailto:`) | `mailto:admin@kisanprocure.example.com` |
 
 ---
 
@@ -103,7 +112,7 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 ## 🏭 Production & Deployment Guidelines
 
 - **Database**: Production requires PostgreSQL (`DATABASE_URL=postgresql+psycopg://...`). SQLite is blocked in production mode.
-- **Server Worker**: Deploy using an async Socket.IO server (e.g. `gunicorn -k eventlet -w 1 "run:app"`).
+- **Server Worker**: Deploy using an async Socket.IO server (e.g. `gunicorn -k eventlet -w 1 "run:app"`). `gunicorn` is pinned in `requirements.txt` for Linux only; the `eventlet`/`gevent` worker is **not** pinned, so install the worker package that matches `SOCKETIO_ASYNC_MODE`.
 - **HTTPS & Security**: Require HTTPS for Service Worker and Web Push APIs.
 - **Security Headers**: Automatic `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store` on API responses.
 
@@ -116,7 +125,7 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 - Farmer Profile Management
 - Procurement Centre & Crop Catalogue Management
 - Slot Management & Capacity Constraints
-- Farmer Slot Booking & Token Generation (`LDH-0001`)
+- Farmer Slot Booking & Token Generation (`K-0001`) — sequential per centre + date
 - Queue Position & Estimated Wait Calculation
 - Real-time Queue Updates via Socket.IO
 - Procurement Tracking (Quantity & Status)
