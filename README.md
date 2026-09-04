@@ -38,6 +38,11 @@ python -m flask --app run.py db upgrade
 # 7. Seed demo data (idempotent seeder)
 python -m flask --app run.py seed-demo
 
+# 7b. Optional: seed the COMPLETE SIH demo dataset (centres, crops, staff,
+#      farmers, slots, bookings, tokens, delays, procurement, payments,
+#      notifications, audit logs). Also idempotent and non-destructive.
+python -m flask --app run.py seed-demo-full
+
 # 8. Start development server
 python run.py
 ```
@@ -62,6 +67,40 @@ Check database migration state:
 ```bash
 .venv\Scripts\python.exe -m flask --app run.py db check
 ```
+
+---
+
+## 🌱 Demo Seed Commands
+
+Two idempotent seed commands are available:
+
+### `flask seed-demo` — Basic demo data
+Creates fictional demo centres and crops only. Safe to run repeatedly.
+
+```bash
+python -m flask --app run.py seed-demo
+```
+
+### `flask seed-demo-full` — Complete SIH demo dataset
+Creates a full fictional demonstration dataset including:
+- 2 demo procurement centres (Ludhiana Grade-A, Patiala)
+- 6 demo crops (Wheat, Paddy, Maize, Gram, Soybean, Cotton)
+- 2 demo staff users (one per centre)
+- 5 demo farmer users
+- 5 today-relative demo slots
+- 5 demo bookings with sequential tokens (K-0001 … K-0005)
+- Procurement, payment, delay, notification, and audit records
+
+```bash
+python -m flask --app run.py seed-demo-full
+```
+
+**Important notes:**
+- All demo records are **fictional** and clearly marked.
+- **No passwords are stored locally** — the seed creates local User/Staff/Farmer rows only.
+- **Supabase Auth accounts must be provisioned separately** for actual login; the seed does not contact Supabase Auth and does not create fake credentials.
+- **No real payment / SMS / WhatsApp / email service** is used by the seed.
+- The command is **idempotent** and **non-destructive**: running it multiple times will not create duplicates or delete existing data.
 
 ---
 
