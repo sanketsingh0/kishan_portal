@@ -151,7 +151,7 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 ## 🏭 Production & Deployment Guidelines
 
 - **Database**: Production requires PostgreSQL (`DATABASE_URL=postgresql+psycopg://...`). SQLite is blocked in production mode.
-- **Server Worker**: Deploy using an async Socket.IO server (e.g. `gunicorn -k eventlet -w 1 "run:app"`). `gunicorn` is pinned in `requirements.txt` for Linux only; the `eventlet`/`gevent` worker is **not** pinned, so install the worker package that matches `SOCKETIO_ASYNC_MODE`.
+- **Server Worker**: Deploy using an async Socket.IO server (e.g. `gunicorn -k eventlet -w 1 "run:app"`). `gunicorn` and `eventlet` are pinned in `requirements.txt` for Linux only; `run.py` calls `eventlet.monkey_patch()` on import so the worker patches the standard library before Flask/SQLAlchemy are loaded.
 - **HTTPS & Security**: Require HTTPS for Service Worker and Web Push APIs.
 - **Security Headers**: Automatic `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store` on API responses.
 

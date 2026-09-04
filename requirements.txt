@@ -39,6 +39,11 @@ httpx>=0.27,<1
 # Local development uses Flask's built-in server.
 gunicorn>=22.0,<24
 
+# eventlet is the async worker for gunicorn in production and the async
+# mode for Flask-SocketIO. It must be installed for the
+# `gunicorn -k eventlet -w 1 "run:app"` production command to work.
+eventlet>=0.36,<1
+
 # --- Testing ---------------------------------------------------------------------
 pytest>=8.0,<9
 pytest-cov>=5.0,<7

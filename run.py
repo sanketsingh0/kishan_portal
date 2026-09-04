@@ -9,6 +9,17 @@ Usage:
     flask --app run.py run
 """
 
+# --- Eventlet monkey-patching -------------------------------------------------
+# MUST execute before any other import (Flask, Werkzeug, SQLAlchemy, Pydantic,
+# etc.). When running under gunicorn's eventlet worker
+# (`gunicorn -k eventlet -w 1 "run:app"`), gunicorn imports this module to
+# obtain `app`. Patching here guarantees the standard-library sockets,
+# threading and SSL modules are replaced with eventlet's cooperative
+# versions before any dependency references them. This prevents the
+# "RLock(s) were not greened" / "Working outside of context" errors.
+import eventlet
+eventlet.monkey_patch()
+
 import os
 
 from dotenv import load_dotenv
