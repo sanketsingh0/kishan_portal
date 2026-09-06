@@ -4,15 +4,20 @@ KisanProcure entry point.
 Loads environment variables from .env (if present), builds the Flask app
 and runs the development server.
 
-Production (Render) starts the same `app` object with gunicorn's default
-SYNC workers (`gunicorn -w 2 -b 0.0.0.0:$PORT run:app`) while Flask-SocketIO
-runs in `threading` async mode, so no eventlet/gevent monkey-patching is
-required anywhere in the codebase.
+Production (Render) starts the same `app` object with gunicorn's `gthread`
+worker class (single multi-threaded worker) while Flask-SocketIO runs in
+`threading` async mode.  No eventlet/gevent monkey-patching is required.
+
+The accompanying `gunicorn.conf.py` sets workers=1, threads=4 and registers
+a `post_fork` hook that disposes the inherited SQLAlchemy engine pool so
+each worker creates its own fresh pool (avoids the "cannot notify on an
+un-acquired lock" RuntimeError in sqlalchemy/util/queue.py).
 
 Usage:
     python run.py
     flask --app run.py run
-    gunicorn -w 2 -b 0.0.0.0:5000 run:app   # production
+    gunicorn -c gunicorn.conf.py run:app      # production (recommended)
+    gunicorn -w 1 --threads 4 -b 0.0.0.0:5000 run:app  # production (alt)
 """
 
 import os

@@ -17,6 +17,18 @@ class SupabaseConfigError(AuthError):
         super().__init__(message, code="SUPABASE_CONFIG_ERROR")
 
 
+class SupabaseUnavailableError(AuthError):
+    """Raised when the Supabase endpoint is unreachable or misbehaves.
+
+    Covers transport-level failures from the underlying httpx layer
+    (e.g. ``httpx.RemoteProtocolError``, connect/read timeouts). Clients
+    should respond with 503 Service Unavailable, not a generic 500.
+    """
+
+    def __init__(self, message: str = "Supabase is temporarily unavailable"):
+        super().__init__(message, code="SUPABASE_UNAVAILABLE")
+
+
 class InvalidCredentialsError(AuthError):
     """Raised when login credentials are invalid."""
 

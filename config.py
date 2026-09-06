@@ -34,10 +34,19 @@ class Config:
 
     SQLALCHEMY_TRACK_MODIFICATIONS = False
 
-    # Keep these small - Refresh the connection before reuse (important for
-    # hosted PostgreSQL such as Supabase where idle connections get dropped).
+    # Pool options that are SAFE for ALL pool types (StaticPool for SQLite,
+    # QueuePool for PostgreSQL).  QueuePool-specific options (pool_size,
+    # max_overflow, pool_recycle) are set in ProductionConfig below.
+    #
+    # - pool_pre_ping: verify each connection before reuse (Supabase drops
+    #   idle connections; this prevents "server closed the connection" errors).
+    # - pool_reset_on_return: "rollback" ensures connections are cleanly reset
+    #   when returned from ANY thread, preventing the "cannot notify on an
+    #   un-acquired lock" RuntimeError that occurs when a connection is
+    #   returned from a different thread than the one that checked it out.
     SQLALCHEMY_ENGINE_OPTIONS = {
         "pool_pre_ping": True,
+        "pool_reset_on_return": "rollback",
     }
 
     # --- Supabase (Auth) ------------------------------------------------------
@@ -89,6 +98,21 @@ class ProductionConfig(Config):
     DEBUG = False
     TESTING = False
     SQLALCHEMY_DATABASE_URI = os.getenv("DATABASE_URL")
+
+    # QueuePool-specific options for PostgreSQL production.
+    # These are NOT valid for SQLite's StaticPool (used in dev/test), so they
+    # are set here rather than in the base Config.
+    #
+    # - pool_size / max_overflow: sized for a single gthread worker with
+    #   multiple threads (HTTP + SocketIO background threads + APScheduler).
+    # - pool_recycle: recycle connections before Supabase's idle timeout.
+    SQLALCHEMY_ENGINE_OPTIONS = {
+        "pool_pre_ping": True,
+        "pool_reset_on_return": "rollback",
+        "pool_size": 5,
+        "max_overflow": 10,
+        "pool_recycle": 300,
+    }
 
 
 config_map = {

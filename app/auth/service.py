@@ -8,7 +8,10 @@ Handles all interactions with Supabase Auth:
 - Local user synchronization
 """
 
+import httpx
+
 from flask import current_app
+from sqlalchemy.exc import IntegrityError
 
 from app.extensions import db
 from app.models import User, Farmer, UserRole
@@ -19,11 +22,49 @@ from app.auth.exceptions import (
     DuplicateUserError,
     TokenError,
     UserSynchronizationError,
+    SupabaseUnavailableError,
 )
 
 # Imported here so tests can mock this module-level reference.
 from supabase import create_client
-from supabase_auth.errors import AuthApiError
+from supabase.lib.client_options import SyncClientOptions
+from supabase_auth.errors import (
+    AuthApiError,
+    AuthRetryableError,
+    AuthWeakPasswordError,
+)
+
+
+def _build_supabase_http_client() -> httpx.Client:
+    """Build the httpx client used for all Supabase API calls.
+
+    The supabase-auth / gotrue SDK hard-codes ``http2=True`` on the internal
+    httpx client it creates.  HTTP/2 (h2 framing) over the Render ->
+    Supabase (Cloudflare edge) path is unreliable and surfaces as
+    ``httpx.RemoteProtocolError: illegal request line`` — h11's parser sees
+    the TLS/close handshake bytes that land on the socket when the edge
+    tears the HTTP/2 connection down, and mis-parses them as an HTTP/1.1
+    request line.  Supabase works reliably over plain HTTP/1.1 (the default
+    for every other Supabase client), so HTTP/2 is explicitly disabled here.
+
+    A fresh client is created per call (``get_supabase_client`` returns a new
+    client for every request), so no connection is ever shared across
+    threads (gthread / threading-mode safe).
+
+    Timeouts are raised above httpx's 5s default to tolerate cold Supabase
+    edge starts and slow TLS setup from cloud datacenters.
+    """
+    return httpx.Client(
+        http1=True,
+        http2=False,  # force HTTP/1.1 (ALPN http/1.1) - see module docstring
+        follow_redirects=True,  # keep SDK behaviour
+        timeout=httpx.Timeout(30.0, connect=10.0),
+        limits=httpx.Limits(
+            max_connections=10,
+            max_keepalive_connections=5,
+            keepalive_expiry=5.0,
+        ),
+    )
 
 
 def get_supabase_client():
@@ -32,10 +73,13 @@ def get_supabase_client():
     Prefers the service role key (allows admin operations such as
     per-token sign-out), falling back to the anon key.
 
+    The SDK's own httpx client is replaced with a hardened one that
+    disables HTTP/2 (see ``_build_supabase_http_client``).
+
     Raises:
         SupabaseConfigError: if SUPABASE_URL or keys are missing.
     """
-    url = current_app.config.get("SUPABASE_URL")
+    url = (current_app.config.get("SUPABASE_URL") or "").strip().strip("'\"")
     key = (
         current_app.config.get("SUPABASE_SERVICE_ROLE_KEY")
         or current_app.config.get("SUPABASE_ANON_KEY")
@@ -45,7 +89,8 @@ def get_supabase_client():
             "Supabase URL and key are required. "
             "Set SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY (or SUPABASE_ANON_KEY)."
         )
-    return create_client(url, key)
+    options = SyncClientOptions(httpx_client=_build_supabase_http_client())
+    return create_client(url, key, options=options)
 
 
 def register_farmer(email: str, password: str, name: str, phone: str | None = None):
@@ -79,9 +124,23 @@ def register_farmer(email: str, password: str, name: str, phone: str | None = No
         })
     except AuthApiError as exc:
         error_msg = str(exc).lower()
-        if "already" in error_msg or "duplicate" in error_msg or "exists" in error_msg:
+        error_code = getattr(exc, "code", None)
+        if (
+            error_code
+            in {"email_exists", "phone_exists", "user_already_exists", "identity_already_exists"}
+        ) or (
+            "already" in error_msg or "duplicate" in error_msg or "exists" in error_msg
+        ):
             raise DuplicateUserError()
         raise AuthError(f"Registration failed: {exc}")
+    except (AuthRetryableError, AuthWeakPasswordError) as exc:
+        # Retryable 5xx / rate-limit responses and weak-password rejections
+        # must surface as clean 4xx/5xx AuthErrors, never as raw 500s.
+        raise AuthError(f"Registration failed: {exc}")
+    except httpx.HTTPError as exc:
+        # Transport-level failures (e.g. httpx.RemoteProtocolError from the
+        # flaky HTTP/2 path, connect/read timeouts) => clean 503.
+        raise SupabaseUnavailableError() from exc
 
     if not response.user:
         raise AuthError("Registration failed: no user returned from Supabase")
@@ -105,6 +164,14 @@ def register_farmer(email: str, password: str, name: str, phone: str | None = No
         )
         db.session.add(farmer)
         db.session.commit()
+    except IntegrityError as exc:
+        # Local unique constraints (farmers.phone, users.supabase_user_id):
+        # a duplicate phone/identity at the database level must be a 409,
+        # not a generic 500.
+        db.session.rollback()
+        raise DuplicateUserError(
+            "An account with this phone number already exists"
+        ) from exc
     except Exception as exc:
         db.session.rollback()
         raise UserSynchronizationError(
@@ -136,6 +203,10 @@ def login_user(email: str, password: str):
         })
     except AuthApiError as exc:
         raise InvalidCredentialsError()
+    except httpx.HTTPError as exc:
+        # Transport-level failures (RemoteProtocolError, timeouts, ...) =>
+        # clean 503 instead of an uncaught 500.
+        raise SupabaseUnavailableError() from exc
 
     if not response.user or not response.session:
         raise InvalidCredentialsError()

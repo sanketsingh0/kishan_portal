@@ -5,10 +5,12 @@ real Supabase credentials.
 """
 
 import pytest
+import httpx
 from unittest.mock import MagicMock, patch
 from flask import g
 
 from app.models import User, Farmer, UserRole
+from app.extensions import db
 
 
 def make_mock_supabase_user(user_id="supabase-uuid-123", email="farmer@example.com"):
@@ -94,6 +96,156 @@ class TestRegistration:
         assert resp.status_code == 201
         u = User.query.filter_by(supabase_user_id="admin-attempt").first()
         assert u.role == UserRole.FARMER
+
+
+class TestRegistrationSupabaseTransportErrors:
+    """Regression tests for backend-to-Supabase transport failures.
+
+    Production bug: the supabase-auth SDK hard-codes ``http2=True`` on its
+    internal httpx client; over the Render -> Supabase (Cloudflare edge) path
+    that surfaced as ``httpx.RemoteProtocolError: illegal request line`` and a
+    generic 500 / browser "Network error".  The app must (a) use an HTTP/1.1
+    httpx client and (b) convert transport-level failures into clean 503s.
+    """
+
+    def test_remote_protocol_error_returns_503_not_500(self, client, mock_supabase):
+        """The exact production failure must map to 503, never crash to 500."""
+        mock_supabase.auth.sign_up.side_effect = httpx.RemoteProtocolError(
+            "illegal request line"
+        )
+        resp = client.post("/api/auth/register", json={
+            "email": "transport@example.com", "password": "securepassword",
+            "name": "Transport Error",
+        })
+        assert resp.status_code == 503
+        assert resp.get_json()["error"] == "Service unavailable"
+
+    def test_connect_timeout_returns_503(self, client, mock_supabase):
+        mock_supabase.auth.sign_up.side_effect = httpx.ConnectTimeout(
+            "connect timed out",
+            request=httpx.Request(
+                "POST", "https://example.supabase.co"
+            ),
+        )
+        resp = client.post("/api/auth/register", json={
+            "email": "timeout@example.com", "password": "securepassword", "name": "T",
+        })
+        assert resp.status_code == 503
+
+    def test_weak_password_returns_400_not_500(self, client, mock_supabase):
+        """Supabase's weak-password rejection must not become a raw 500."""
+        from supabase_auth.errors import AuthWeakPasswordError
+        mock_supabase.auth.sign_up.side_effect = AuthWeakPasswordError(
+            "Password should contain at least one of each: ...", 422, ["weak_password"]
+        )
+        resp = client.post("/api/auth/register", json={
+            "email": "weak@example.com", "password": "123", "name": "Weak",
+        })
+        assert resp.status_code == 400
+
+    def test_retryable_error_returns_400_not_500(self, client, mock_supabase):
+        """Supabase 5xx/retryable responses must surface as AuthError."""
+        from supabase_auth.errors import AuthRetryableError
+        mock_supabase.auth.sign_up.side_effect = AuthRetryableError("temporary", 503)
+        resp = client.post("/api/auth/register", json={
+            "email": "retry@example.com", "password": "securepassword", "name": "R",
+        })
+        assert resp.status_code == 400
+
+    def test_login_transport_error_returns_503(self, client, mock_supabase):
+        """The same transport crash on login must also map to 503."""
+        mock_supabase.auth.sign_in_with_password.side_effect = httpx.RemoteProtocolError(
+            "illegal request line"
+        )
+        resp = client.post("/api/auth/login", json={
+            "email": "login@example.com", "password": "securepassword",
+        })
+        assert resp.status_code == 503
+
+    def test_duplicate_email_via_api_code_returns_409(self, client, mock_supabase):
+        """Supabase 'user_already_exists' API code must map to 409 (not 500)."""
+        from supabase_auth.errors import AuthApiError
+        mock_supabase.auth.sign_up.side_effect = AuthApiError(
+            "User already registered", 400, "user_already_exists"
+        )
+        resp = client.post("/api/auth/register", json={
+            "email": "dupcode@example.com", "password": "securepassword", "name": "D",
+        })
+        assert resp.status_code == 409
+
+    def test_duplicate_phone_local_constraint_returns_409(self, app, client, mock_supabase):
+        """Local unique constraint on farmers.phone must map to 409, not a 500.
+
+        Supabase only enforces phone uniqueness when phone is a login method,
+        so a second account with the same phone passes Supabase auth and fails
+        only at the local DB insert.
+        """
+        existing_user = User(
+            supabase_user_id="existing-phone-user", role=UserRole.FARMER, is_active=True
+        )
+        with app.app_context():
+            db.session.add(existing_user)
+            db.session.flush()
+            db.session.add(Farmer(user_id=existing_user.id, name="First", phone="9876543210"))
+            db.session.commit()
+
+        mock_supabase.auth.sign_up.return_value = make_mock_auth_response(
+            make_mock_supabase_user(user_id="dup-phone-uuid"),
+            make_mock_session(),
+        )
+        resp = client.post("/api/auth/register", json={
+            "email": "dupphone@example.com", "password": "securepassword",
+            "name": "Dup Phone", "phone": "9876543210",
+        })
+        assert resp.status_code == 409
+        assert "already exists" in resp.get_json()["message"]
+
+    def test_supabase_client_uses_http1_httpx_client(self, app):
+        """get_supabase_client() must inject an HTTP/1.1 httpx client.
+
+        Regression: the SDK defaults to http2=True; forcing HTTP/1.1 avoids the
+        RemoteProtocolError that broke /api/auth/register on Render.
+        """
+        from app.auth.service import get_supabase_client
+
+        captured = {}
+
+        def fake_create_client(url, key, options=None):
+            captured["url"] = url
+            captured["key"] = key
+            captured["options"] = options
+            return MagicMock()
+
+        with patch("app.auth.service.create_client", side_effect=fake_create_client):
+            with app.app_context():
+                app.config["SUPABASE_URL"] = "https://example.supabase.co"
+                app.config["SUPABASE_ANON_KEY"] = "anon-key"
+                get_supabase_client()
+
+        options = captured["options"]
+        assert options is not None
+        client = options.httpx_client
+        assert client is not None
+        transport = client._transport
+        assert transport._pool._http2 is False
+        assert transport._pool._http1 is True
+
+    def test_supabase_client_normalizes_url_whitespace(self, app):
+        """Whitespace/quotes accidentally left on SUPABASE_URL must not break calls."""
+        from app.auth.service import get_supabase_client
+
+        captured = {}
+
+        def fake_create_client(url, key, options=None):
+            captured["url"] = url
+            return MagicMock()
+
+        with patch("app.auth.service.create_client", side_effect=fake_create_client):
+            with app.app_context():
+                app.config["SUPABASE_URL"] = '  "https://example.supabase.co"  '
+                app.config["SUPABASE_ANON_KEY"] = "anon-key"
+                get_supabase_client()
+        assert captured["url"] == "https://example.supabase.co"
 
 
 class TestRegistrationNullableFields:

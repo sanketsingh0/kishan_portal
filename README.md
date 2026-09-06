@@ -151,18 +151,18 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 ## 🏭 Production & Deployment Guidelines
 
 - **Database**: Production requires PostgreSQL (`DATABASE_URL=postgresql+psycopg://...`). SQLite is blocked in production mode.
-- **Server Worker**: Deploy with **gunicorn default sync workers** — no `eventlet`/`gevent`, no monkey-patching:
+- **Server Worker**: Deploy with **gunicorn `gthread` worker** (single multi-threaded worker) — no `eventlet`/`gevent`, no monkey-patching:
 
   ```
-  gunicorn -w 2 -b 0.0.0.0:$PORT run:app
+  gunicorn -c gunicorn.conf.py run:app
   ```
 
-  Flask-SocketIO runs in `threading` async mode, so each sync worker handles both plain HTTP requests and Socket.IO WebSockets (`simple-websocket`, already in `requirements.txt`) / long-poll connections. Browser Socket.IO clients automatically fall back to long polling if the proxy disables WebSockets.
+  A single `gthread` worker (1 process × 4 threads by default) serves both plain HTTP requests and Socket.IO WebSocket / long-poll connections. Flask-SocketIO runs in `threading` async mode, so no `eventlet`/`gevent` or monkey-patching is required. Using a single worker ensures Socket.IO room broadcasts work correctly without an external message queue (Redis/RabbitMQ). The `post_fork` hook in `gunicorn.conf.py` disposes the inherited SQLAlchemy engine pool so each worker creates its own fresh connection pool — this avoids the `RuntimeError: cannot notify on an un-acquired lock` crash in `sqlalchemy/util/queue.py` that occurs when multiple threads share a forked pool.
 
 ### Render Setup
 
 - **Build command**: `pip install -r requirements.txt`
-- **Start command**: `gunicorn -w 2 -b 0.0.0.0:$PORT run:app`
+- **Start command**: `gunicorn -c gunicorn.conf.py run:app`
 - **Python version**: 3.13 (pinned via `.python-version`)
 - **Environment**: set `FLASK_ENV=production` plus the variables documented in the table above (Render auto-provides `$PORT`).
 - **HTTPS & Security**: Require HTTPS for Service Worker and Web Push APIs.

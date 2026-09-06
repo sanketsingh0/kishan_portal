@@ -15,6 +15,7 @@ from app.auth.exceptions import (
     DuplicateUserError,
     InvalidCredentialsError,
     SupabaseConfigError,
+    SupabaseUnavailableError,
     UserSynchronizationError,
 )
 from app.auth.service import (
@@ -146,6 +147,13 @@ def register():
             "error": "Service unavailable",
             "message": "Authentication service is not configured.",
         }), 503
+    except SupabaseUnavailableError:
+        current_app.logger.error("Supabase Auth temporarily unreachable")
+        return jsonify({
+            "error": "Service unavailable",
+            "message": "The authentication service is temporarily unavailable. "
+                       "Please try again.",
+        }), 503
     except AuthError as exc:
         return jsonify({"error": "Registration failed", "message": exc.message}), 400
 
@@ -195,6 +203,13 @@ def login():
         return jsonify({
             "error": "Service unavailable",
             "message": "Authentication service is not configured.",
+        }), 503
+    except SupabaseUnavailableError:
+        current_app.logger.error("Supabase Auth temporarily unreachable")
+        return jsonify({
+            "error": "Service unavailable",
+            "message": "The authentication service is temporarily unavailable. "
+                       "Please try again.",
         }), 503
     except AuthError as exc:
         if getattr(exc, "code", None) == "ACCOUNT_DISABLED":
