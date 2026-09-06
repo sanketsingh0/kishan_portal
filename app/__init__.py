@@ -14,7 +14,7 @@ import os
 from dotenv import load_dotenv
 from flask import Flask
 
-from config import config_map
+from config import config_map, demo_seed_on_start_enabled
 from app.extensions import db, migrate, scheduler, socketio
 from app.cli import register_cli
 
@@ -38,6 +38,11 @@ def create_app(config_name: str | None = None) -> Flask:
 
     app = Flask(__name__)
     app.config.from_object(config_map[config_name])
+
+    # Runtime evaluation of DEMO_SEED_ON_START (the class attribute is computed
+    # at config-module import time, so a value set right before create_app()
+    # would otherwise be missed). Cleaned boolean lives in app.config.
+    app.config["DEMO_SEED_ON_START"] = demo_seed_on_start_enabled()
 
     if app.config.get("ENV") == "production":
         _validate_production_config(app)
@@ -103,12 +108,50 @@ def create_app(config_name: str | None = None) -> Flask:
     # --- CLI commands (flask seed-demo, ...) -----------------------------------
     register_cli(app)
 
+    # --- Demo seed on startup (OPT-IN) ------------------------------------------
+    # When DEMO_SEED_ON_START=true, run the SAME idempotent non-destructive
+    # seeder as `flask seed-demo-full` automatically at startup (after the DB
+    # and app are initialized). This covers platforms without a Shell (e.g. the
+    # current Render plan). Default is false — never auto-enabled in production.
+    if app.config.get("DEMO_SEED_ON_START"):
+        _seed_demo_on_startup(app)
+
     # --- Scheduling -------------------------------------------------------------
     # Never start background threads while running the test-suite.
     if not app.config.get("TESTING") and not scheduler.running:
         scheduler.start()
 
     return app
+
+
+def _seed_demo_on_startup(app: Flask) -> None:
+    """Run the existing full SIH demo seed at app startup (opt-in only).
+
+    Reuses the exact implementation behind ``flask seed-demo-full``
+    (``app.services.full_seed.seed_demo_full``) — no seed logic is duplicated
+    here. The seeder is idempotent and non-destructive, so this is safe on
+    every boot and never removes or modifies user data.
+    """
+    from app.services.full_seed import seed_demo_full
+
+    with app.app_context():
+        stats = seed_demo_full()
+
+    app.logger.info(
+        "DEMO_SEED_ON_START: full demo seed applied "
+        "(centres new=%s, crops new=%s, staff new=%s, farmers new=%s, "
+        "slots new=%s, bookings new=%s, delays new=%s, "
+        "procurements new=%s, payments new=%s)",
+        stats["centres"]["new"],
+        stats["crops"]["new"],
+        stats["staff"]["new"],
+        stats["farmers"]["new"],
+        stats["slots"]["new"],
+        stats["bookings"]["new"],
+        stats["delays"]["new"],
+        stats["procurements"]["new"],
+        stats["payments"]["new"],
+    )
 
 
 def _validate_production_config(app: Flask) -> None:

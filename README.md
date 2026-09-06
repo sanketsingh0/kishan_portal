@@ -102,6 +102,25 @@ python -m flask --app run.py seed-demo-full
 - **No real payment / SMS / WhatsApp / email service** is used by the seed.
 - The command is **idempotent** and **non-destructive**: running it multiple times will not create duplicates or delete existing data.
 
+### `DEMO_SEED_ON_START` — seed the full demo dataset automatically at startup (OPT-IN)
+
+On platforms **without a Shell** (e.g. the current Render plan), the CLI
+command above cannot be run manually. To get the exact same dataset
+automatically during application startup, opt in via the environment:
+
+```bash
+DEMO_SEED_ON_START=true
+```
+
+It reuses the **identical** `flask seed-demo-full` implementation (no
+duplicated seed logic), runs once the database/app initialization is ready,
+remains idempotent and non-destructive, and:
+
+- Defaults to **`false`** — demo seeding is **never** auto-enabled in normal production.
+- Creates only fictional demo records. **No passwords, no fake JWTs, no
+  Supabase Auth changes, no PostgreSQL changes** — everything the CLI seed does.
+- Platform start command stays unchanged (e.g. `gunicorn -c gunicorn.conf.py run:app`).
+
 ---
 
 ## 🔑 Environment Variables
@@ -117,6 +136,7 @@ Secrets and configurations are managed via `.env` (never committed):
 | `DATABASE_URL` | SQLAlchemy URI (SQLite local / PostgreSQL production) | SQLite `instance/kisanprocure.db` |
 | `SOCKETIO_ASYNC_MODE` | Socket.IO async mode — keep `threading` (only supported mode; gunicorn sync workers provide concurrency) | `threading` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed Socket.IO origins | `*` |
+| `DEMO_SEED_ON_START` | `true` runs the idempotent `flask seed-demo-full` seeder automatically at startup (for platforms without a Shell, e.g. Render). Default OFF; never auto-enabled in normal production | `false` |
 | `SUPABASE_URL` | Supabase project URL (safe for frontend) | Empty |
 | `SUPABASE_ANON_KEY` | Supabase anonymous key (safe for frontend; legacy alias `SUPABASE_PUBLISHABLE_KEY`) | Empty |
 | `SUPABASE_SERVICE_ROLE_KEY` | Supabase service-role key (**server-only**; legacy alias `SUPABASE_SECRET_KEY`) | Empty |

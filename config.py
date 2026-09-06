@@ -21,6 +21,27 @@ def _default_dev_database_uri() -> str:
     return f"sqlite:///{db_path}"
 
 
+def demo_seed_on_start_enabled() -> bool:
+    """Return True when ``DEMO_SEED_ON_START`` is set to a truthy value.
+
+    When enabled, the application automatically runs the SAME idempotent,
+    non-destructive seeder behind ``flask seed-demo-full`` during startup,
+    after the database and app are initialized. This is useful on platforms
+    without a Shell (e.g. the current Render plan), where running the Flask
+    CLI command manually is not possible.
+
+    ``DEMO_SEED_ON_START`` is parsed at application-factory time so it is
+    safe to change it right before creating the app (which is also what the
+    test-suite relies on). Default: OFF.
+    """
+    return os.getenv("DEMO_SEED_ON_START", "false").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+        "on",
+    )
+
+
 class Config:
     """Base configuration shared by all environments."""
 
@@ -74,6 +95,16 @@ class Config:
     # gevent required). Left as an env knob for forward compatibility.
     SOCKETIO_ASYNC_MODE = os.getenv("SOCKETIO_ASYNC_MODE", "threading")
     CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
+
+    # --- Demo seed on startup (OPT-IN) ---------------------------------------
+    # When true, the app runs the existing idempotent `flask seed-demo-full`
+    # seeder automatically at startup (after the DB is ready). This is a
+    # fallback for platforms without a Shell (e.g. the current Render plan).
+    # Disabled by default and never auto-enabled in normal production.
+    # NOTE: create_app() re-evaluates the environment at runtime and stores
+    # the parsed boolean in app.config, so this class attribute is primarily
+    # documentation + the default for anything that reads the class directly.
+    DEMO_SEED_ON_START = demo_seed_on_start_enabled()
 
 
 class DevelopmentConfig(Config):
