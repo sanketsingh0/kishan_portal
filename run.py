@@ -4,21 +4,16 @@ KisanProcure entry point.
 Loads environment variables from .env (if present), builds the Flask app
 and runs the development server.
 
+Production (Render) starts the same `app` object with gunicorn's default
+SYNC workers (`gunicorn -w 2 -b 0.0.0.0:$PORT run:app`) while Flask-SocketIO
+runs in `threading` async mode, so no eventlet/gevent monkey-patching is
+required anywhere in the codebase.
+
 Usage:
     python run.py
     flask --app run.py run
+    gunicorn -w 2 -b 0.0.0.0:5000 run:app   # production
 """
-
-# --- Eventlet monkey-patching -------------------------------------------------
-# MUST execute before any other import (Flask, Werkzeug, SQLAlchemy, Pydantic,
-# etc.). When running under gunicorn's eventlet worker
-# (`gunicorn -k eventlet -w 1 "run:app"`), gunicorn imports this module to
-# obtain `app`. Patching here guarantees the standard-library sockets,
-# threading and SSL modules are replaced with eventlet's cooperative
-# versions before any dependency references them. This prevents the
-# "RLock(s) were not greened" / "Working outside of context" errors.
-import eventlet
-eventlet.monkey_patch()
 
 import os
 

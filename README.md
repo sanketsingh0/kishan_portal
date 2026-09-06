@@ -115,7 +115,7 @@ Secrets and configurations are managed via `.env` (never committed):
 | `HOST` | Host for `python run.py` (local dev only) | `127.0.0.1` |
 | `PORT` | Port for `python run.py` (local dev only) | `5000` |
 | `DATABASE_URL` | SQLAlchemy URI (SQLite local / PostgreSQL production) | SQLite `instance/kisanprocure.db` |
-| `SOCKETIO_ASYNC_MODE` | Socket.IO engine mode (`threading`, `eventlet`, `gevent`) | `threading` |
+| `SOCKETIO_ASYNC_MODE` | Socket.IO async mode — keep `threading` (only supported mode; gunicorn sync workers provide concurrency) | `threading` |
 | `CORS_ALLOWED_ORIGINS` | Comma-separated allowed Socket.IO origins | `*` |
 | `SUPABASE_URL` | Supabase project URL (safe for frontend) | Empty |
 | `SUPABASE_ANON_KEY` | Supabase anonymous key (safe for frontend; legacy alias `SUPABASE_PUBLISHABLE_KEY`) | Empty |
@@ -151,7 +151,20 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 ## 🏭 Production & Deployment Guidelines
 
 - **Database**: Production requires PostgreSQL (`DATABASE_URL=postgresql+psycopg://...`). SQLite is blocked in production mode.
-- **Server Worker**: Deploy using an async Socket.IO server (e.g. `gunicorn -k eventlet -w 1 "run:app"`). `gunicorn` and `eventlet` are pinned in `requirements.txt` for Linux only; `run.py` calls `eventlet.monkey_patch()` on import so the worker patches the standard library before Flask/SQLAlchemy are loaded.
+- **Server Worker**: Deploy with **gunicorn default sync workers** — no `eventlet`/`gevent`, no monkey-patching:
+
+  ```
+  gunicorn -w 2 -b 0.0.0.0:$PORT run:app
+  ```
+
+  Flask-SocketIO runs in `threading` async mode, so each sync worker handles both plain HTTP requests and Socket.IO WebSockets (`simple-websocket`, already in `requirements.txt`) / long-poll connections. Browser Socket.IO clients automatically fall back to long polling if the proxy disables WebSockets.
+
+### Render Setup
+
+- **Build command**: `pip install -r requirements.txt`
+- **Start command**: `gunicorn -w 2 -b 0.0.0.0:$PORT run:app`
+- **Python version**: 3.13 (pinned via `.python-version`)
+- **Environment**: set `FLASK_ENV=production` plus the variables documented in the table above (Render auto-provides `$PORT`).
 - **HTTPS & Security**: Require HTTPS for Service Worker and Web Push APIs.
 - **Security Headers**: Automatic `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store` on API responses.
 

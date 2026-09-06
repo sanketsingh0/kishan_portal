@@ -37,12 +37,13 @@ httpx>=0.27,<1
 # --- Deployment -----------------------------------------------------------------
 # gunicorn is for Linux deployment ONLY - it does not run on Windows.
 # Local development uses Flask's built-in server.
+#
+# Production start command (Render) - gunicorn default SYNC workers +
+# Flask-SocketIO `threading` async mode. No eventlet/gevent or monkey
+# patching is required: every sync worker can serve HTTP requests and
+# Socket.IO WebSockets (simple-websocket) / long-poll connections.
+#   gunicorn -w 2 -b 0.0.0.0:$PORT run:app
 gunicorn>=22.0,<24
-
-# eventlet is the async worker for gunicorn in production and the async
-# mode for Flask-SocketIO. It must be installed for the
-# `gunicorn -k eventlet -w 1 "run:app"` production command to work.
-eventlet>=0.36,<1
 
 # --- Testing ---------------------------------------------------------------------
 pytest>=8.0,<9

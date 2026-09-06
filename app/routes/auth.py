@@ -28,6 +28,19 @@ from app.models import UserRole
 auth_bp = Blueprint("auth", __name__, url_prefix="/api/auth")
 
 
+def _clean_optional_str(value) -> str | None:
+    """Normalize an optional string field from JSON input.
+
+    Safely handles missing keys, explicit JSON ``None``, empty strings and
+    whitespace-only strings as ``None``; any other string is stripped.
+    Non-string junk (numbers, objects) is coerced to a stripped string.
+    """
+    if value is None:
+        return None
+    text = str(value).strip()
+    return text or None
+
+
 def _validate_registration_input(data):
     """Validate registration input fields.
 
@@ -37,9 +50,9 @@ def _validate_registration_input(data):
     if not data:
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
 
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
-    name = data.get("name", "").strip()
+    email = _clean_optional_str(data.get("email")) or ""
+    password = _clean_optional_str(data.get("password")) or ""
+    name = _clean_optional_str(data.get("name")) or ""
 
     errors = []
     if not email:
@@ -70,8 +83,8 @@ def _validate_login_input(data):
     if not data:
         return jsonify({"error": "Invalid request", "message": "JSON body required."}), 400
 
-    email = data.get("email", "").strip()
-    password = data.get("password", "")
+    email = _clean_optional_str(data.get("email")) or ""
+    password = _clean_optional_str(data.get("password")) or ""
 
     errors = []
     if not email:
@@ -107,10 +120,10 @@ def register():
     if error:
         return error, status
 
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
-    name = data.get("name", "").strip()
-    phone = data.get("phone", "").strip() or None
+    email = (_clean_optional_str(data.get("email")) or "").lower()
+    password = _clean_optional_str(data.get("password")) or ""
+    name = _clean_optional_str(data.get("name")) or ""
+    phone = _clean_optional_str(data.get("phone"))
 
     try:
         supabase_user, session = register_farmer(
@@ -167,8 +180,8 @@ def login():
     if error:
         return error, status
 
-    email = data.get("email", "").strip().lower()
-    password = data.get("password", "")
+    email = (_clean_optional_str(data.get("email")) or "").lower()
+    password = _clean_optional_str(data.get("password")) or ""
 
     try:
         supabase_user, session = login_user(email=email, password=password)

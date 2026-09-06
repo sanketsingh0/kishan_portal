@@ -96,6 +96,128 @@ class TestRegistration:
         assert u.role == UserRole.FARMER
 
 
+class TestRegistrationNullableFields:
+    """Regression tests for null/missing optional-string registration fields.
+
+    Production bug: ``data.get("phone", "").strip()`` raised AttributeError
+    when the client explicitly sent ``"phone": null`` (the ``""`` default only
+    applies to *missing* keys, never to explicit nulls). The same pattern
+    must be safe for email/name/password (required) and phone (optional).
+    """
+
+    def _register(self, client, mock_supabase, payload, user_id="nullable-field-uuid"):
+        mock_supabase.auth.sign_up.return_value = make_mock_auth_response(
+            make_mock_supabase_user(user_id=user_id),
+            make_mock_session(),
+        )
+        return client.post("/api/auth/register", json=payload)
+
+    def test_register_explicit_null_phone_succeeds(self, client, mock_supabase):
+        """The original production traceback: phone explicitly null -> 201, phone stored as None."""
+        resp = self._register(client, mock_supabase, {
+            "email": "nullphone@example.com",
+            "password": "securepassword",
+            "name": "Null Phone",
+            "phone": None,
+        })
+        assert resp.status_code == 201
+        user = User.query.filter_by(supabase_user_id="nullable-field-uuid").first()
+        assert user is not None
+        assert user.farmer is not None
+        assert user.farmer.phone is None
+        # Supabase metadata must receive an empty string, never the literal "None"
+        data_sent = mock_supabase.auth.sign_up.call_args.args[0]["options"]["data"]
+        assert data_sent["phone"] == ""
+
+    @pytest.mark.parametrize("phone_value", [
+        pytest.param(None, id="null"),
+        pytest.param("", id="empty-string"),
+        pytest.param("   ", id="whitespace"),
+    ])
+    def test_register_phone_null_empty_whitespace_stored_as_none(
+        self, client, mock_supabase, phone_value
+    ):
+        payload = {
+            "email": "phoneparam@example.com",
+            "password": "securepassword",
+            "name": "Phone Test",
+            "phone": phone_value,
+        }
+        resp = self._register(client, mock_supabase, payload, user_id="phone-param-uuid")
+        assert resp.status_code == 201
+        user = User.query.filter_by(supabase_user_id="phone-param-uuid").first()
+        assert user.farmer.phone is None
+
+    def test_register_phone_not_sent_at_all(self, client, mock_supabase):
+        """Missing key (legacy behaviour) must keep working."""
+        resp = self._register(client, mock_supabase, {
+            "email": "nopkey@example.com",
+            "password": "securepassword",
+            "name": "No Key",
+        }, user_id="phone-missing-uuid")
+        assert resp.status_code == 201
+        user = User.query.filter_by(supabase_user_id="phone-missing-uuid").first()
+        assert user.farmer.phone is None
+
+    def test_register_phone_whitespace_padded_is_stored_stripped(self, client, mock_supabase):
+        resp = self._register(client, mock_supabase, {
+            "email": "stripped@example.com",
+            "password": "securepassword",
+            "name": "Padded Phone",
+            "phone": "  9876543210  ",
+        }, user_id="phone-stripped-uuid")
+        assert resp.status_code == 201
+        user = User.query.filter_by(supabase_user_id="phone-stripped-uuid").first()
+        assert user.farmer.phone == "9876543210"
+
+    def test_register_null_required_fields_rejected_with_400(self, client, mock_supabase):
+        """null email/name/password -> 400 validation errors, not 500, and no Supabase call."""
+        resp = self._register(client, mock_supabase, {
+            "email": None,
+            "password": None,
+            "name": None,
+            "phone": "9876543210",
+        })
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert "email is required" in body["messages"]
+        assert "password is required" in body["messages"]
+        assert "name is required" in body["messages"]
+        mock_supabase.auth.sign_up.assert_not_called()
+
+    def test_register_empty_and_whitespace_required_fields_rejected(self, client, mock_supabase):
+        resp = self._register(client, mock_supabase, {
+            "email": "",
+            "password": "",
+            "name": "   ",
+        })
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert "email is required" in body["messages"]
+        assert "password is required" in body["messages"]
+        assert "name is required" in body["messages"]
+        mock_supabase.auth.sign_up.assert_not_called()
+
+    def test_register_null_email_still_enforces_format_rules(self, client, mock_supabase):
+        """Required-field validation rules are preserved (no weakening)."""
+        resp = self._register(client, mock_supabase, {
+            "email": "not-an-email",
+            "password": "securepassword",
+            "name": "T",
+        })
+        assert resp.status_code == 400
+        assert "email is invalid" in resp.get_json()["messages"]
+
+    def test_login_null_email_password_rejected_with_400(self, client, mock_supabase):
+        """Same defensive pattern on login: explicit nulls must not 500."""
+        resp = client.post("/api/auth/login", json={"email": None, "password": None})
+        assert resp.status_code == 400
+        body = resp.get_json()
+        assert "email is required" in body["messages"]
+        assert "password is required" in body["messages"]
+        mock_supabase.auth.sign_in_with_password.assert_not_called()
+
+
 class TestLogin:
     """Tests for POST /api/auth/login"""
 

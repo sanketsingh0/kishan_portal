@@ -60,7 +60,9 @@ class Config:
     JWT_EXP = int(os.getenv("JWT_EXP", "3600"))
 
     # --- Realtime (Flask-SocketIO) ---
-    # threading works on the built-in dev server (uses simple-websocket).
+    # `threading` is the only supported async mode: it works on the built-in
+    # dev server and under gunicorn's default sync workers (no eventlet /
+    # gevent required). Left as an env knob for forward compatibility.
     SOCKETIO_ASYNC_MODE = os.getenv("SOCKETIO_ASYNC_MODE", "threading")
     CORS_ALLOWED_ORIGINS = os.getenv("CORS_ALLOWED_ORIGINS", "*").split(",")
 
