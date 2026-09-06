@@ -1,60 +1,219 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <meta name="theme-color" content="#10b981">
-  <link rel="manifest" href="/static/manifest.json">
-  <title>KisanProcure</title>
-  <style>
-    body { font-family: system-ui, -apple-system, Segoe UI, Roboto, sans-serif;
-           margin: 0; padding: 2rem; background: #f4f7f6; color: #1b3a2f; }
-    main { max-width: 640px; margin: 6rem auto; text-align: center; }
-    h1 { font-size: 2.4rem; margin-bottom: 0.25rem; }
-    .tag { color: #2e7d32; font-weight: 600; }
-    .box { background: #fff; border: 1px solid #e0e7e3; border-radius: 10px;
-           padding: 1.5rem; margin-top: 1.5rem; }
-    a { color: #1b5e20; }
-    .auth-actions { display: flex; gap: 0.75rem; justify-content: center;
-                      margin-top: .1rem; flex-wrap: wrap; }
-    .btn-link { display: inline-block; background: #1b4332; color: #fff;
-                  text-decoration: none; padding: 0.55rem 1.2rem;
-                  border-radius: 8px; font-weight: 600; }
-    .btn-link:hover { background: #2d6a4f; color: #fff; }
-    code { background: #eef3f0; padding: 0.1rem 0.4rem; border-radius: 4px; }
-  </style>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<meta name="theme-color" content="#1b4332">
+<meta name="description" content="KisanProcure - Digital procurement platform for farmers.">
+<link rel="manifest" href="/static/manifest.json">
+<title>KisanProcure - Digital Procurement Platform</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&display=swap" rel="stylesheet">
+<link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
+<style>
+:root{--kp:#1b4332;--kp2:#2d6a4f;--kp3:#081c15;--ac:#52b788;--ac2:#74c69d;--bg:#f4f7f5;--tx:#212529;--gb:#0d2818;--wh:#f59e0b;--sk:#0ea5e9;--dg:#dc2626}
+*,*::before,*::after{margin:0;padding:0;box-sizing:border-box}
+body{font-family:'Outfit',sans-serif;background:var(--bg);color:var(--tx);overflow-x:hidden}
+.skip-link{position:absolute;top:-100%;left:0;background:var(--kp);color:#fff;padding:.5rem 1rem;z-index:10000;text-decoration:none}
+.skip-link:focus{top:0}
+.gb{background:var(--gb);color:rgba(255,255,255,.85);font-size:.8rem;padding:.35rem 0;border-bottom:2px solid var(--ac)}
+.gb .gbi{display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:.5rem}
+.gb .gem{display:flex;align-items:center;gap:.5rem;font-weight:600}
+.gb .gem .el{color:var(--ac);font-size:1.1rem}
+.gb a{color:rgba(255,255,255,.8);text-decoration:none;padding:.15rem .5rem;border-radius:3px}
+.gb a:hover{color:#fff}
+.gb .gu{display:flex;align-items:center;gap:.25rem}
+.gb .dv{width:1px;height:14px;background:rgba(255,255,255,.25);margin:0 .25rem}
+.gb .lb{background:none;border:1px solid rgba(255,255,255,.2);color:rgba(255,255,255,.8);font-size:.75rem;padding:.1rem .45rem;border-radius:3px;cursor:pointer}
+.gb .lb.active{border-color:var(--ac);font-weight:600;background:rgba(255,255,255,.15)}
+.mh{background:#fff;box-shadow:0 2px 12px rgba(0,0,0,.06);position:sticky;top:0;z-index:1000}
+.mh .navbar{padding:.6rem 0}
+.mh .nb{display:flex;align-items:center;gap:.6rem;text-decoration:none}
+.mh .bi{width:42px;height:42px;background:linear-gradient(135deg,var(--kp),var(--ac));border-radius:10px;display:flex;align-items:center;justify-content:center;color:#fff;font-size:1.3rem}
+.mh .bt{display:flex;flex-direction:column}
+.mh .bn{font-size:1.35rem;font-weight:800;color:var(--kp);line-height:1.1;letter-spacing:-.5px}
+.mh .bgt{font-size:.7rem;color:var(--kp2);font-weight:500}
+.mh .nl{color:var(--tx);font-weight:500;font-size:.95rem;padding:.4rem .9rem;border-radius:6px;transition:all .2s}
+.mh .nl:hover,.mh .nl.active{color:var(--kp);background:rgba(82,183,136,.1)}
+.mh .ha{display:flex;align-items:center;gap:.5rem}
+.bl{background:none;border:1.5px solid var(--kp);color:var(--kp);font-weight:600;padding:.45rem 1.2rem;border-radius:8px;font-size:.9rem;text-decoration:none}
+.bl:hover{background:var(--kp);color:#fff}
+.br{background:var(--kp);border:1.5px solid var(--kp);color:#fff;font-weight:600;padding:.45rem 1.2rem;border-radius:8px;font-size:.9rem;text-decoration:none}
+.br:hover{background:var(--kp2);border-color:var(--kp2);color:#fff}
+.hs{position:relative;background:linear-gradient(135deg,#081c15 0%,#1b4332 40%,#2d6a4f 100%);padding:4rem 0 5rem;overflow:hidden}
+.hs::before{content:"";position:absolute;top:0;left:0;right:0;bottom:0;background:radial-gradient(ellipse at 20% 50%,rgba(82,183,136,.15) 0%,transparent 60%);pointer-events:none}
+.hs .pr{position:relative;z-index:2}
+.hh{font-size:2.8rem;font-weight:800;color:#fff;line-height:1.15;margin-bottom:1rem;letter-spacing:-1px}
+.hh .hl{color:var(--ac)}
+.hsb{font-size:1.15rem;color:rgba(255,255,255,.8);margin-bottom:.75rem}
+.hf{display:flex;flex-wrap:wrap;gap:.5rem;margin-bottom:2rem}
+.hft{background:rgba(255,255,255,.1);border:1px solid rgba(255,255,255,.15);color:rgba(255,255,255,.9);padding:.35rem .85rem;border-radius:50px;font-size:.85rem;font-weight:500}
+.hc{display:flex;gap:.75rem;flex-wrap:wrap}
+.bhp{background:var(--ac);color:var(--kp3);font-weight:700;padding:.75rem 1.8rem;border-radius:10px;border:none;font-size:1rem;text-decoration:none;display:inline-flex;align-items:center;gap:.5rem}
+.bhp:hover{background:var(--ac2);color:var(--kp3);transform:translateY(-1px);box-shadow:0 4px 16px rgba(82,183,136,.3)}
+.bhs{background:rgba(255,255,255,.1);color:#fff;font-weight:600;padding:.75rem 1.8rem;border-radius:10px;border:1.5px solid rgba(255,255,255,.3);font-size:1rem;text-decoration:none;display:inline-flex;align-items:center;gap:.5rem}
+.bhs:hover{background:rgba(255,255,255,.2);color:#fff}
+.acw{position:relative;z-index:2}
+.ac{background:#fff;border-radius:18px;box-shadow:0 20px 60px rgba(0,0,0,.2);overflow:hidden}
+.ach{background:linear-gradient(135deg,var(--kp),var(--kp2));padding:1rem}
+.ats{display:flex;gap:.25rem;background:rgba(255,255,255,.1);border-radius:10px;padding:.25rem}
+.at{flex:1;background:none;border:none;color:rgba(255,255,255,.7);font-weight:600;font-size:.85rem;padding:.55rem .5rem;border-radius:8px;cursor:pointer;transition:all .2s}
+.at:hover{color:rgba(255,255,255,.9)}
+.at.active{background:#fff;color:var(--kp);box-shadow:0 2px 8px rgba(0,0,0,.15)}
+.acb{padding:1.75rem}
+.ati{font-size:1.25rem;font-weight:700;color:var(--kp);margin-bottom:.25rem}
+.asu{font-size:.85rem;color:#6c757d;margin-bottom:1.25rem}
+.ac .form-label{font-weight:600;font-size:.88rem}
+.ac .form-control{border-radius:10px;border:1.5px solid #dee2e6;padding:.65rem 1rem;font-size:.95rem}
+.ac .form-control:focus{border-color:var(--ac);box-shadow:0 0 0 3px rgba(82,183,136,.15)}
+.bal{background:var(--kp);color:#fff;border:none;border-radius:10px;font-weight:700;padding:.7rem 1.5rem;width:100%;font-size:1rem}
+.bal:hover{background:var(--kp2);color:#fff}
+.bal:disabled{background:#9db8a8;cursor:not-allowed}
+.aal{text-align:center;margin-top:1rem;font-size:.88rem;color:#6c757d}
+.aal a{color:var(--kp);font-weight:600;text-decoration:none}
+.aal a:hover{text-decoration:underline}
+.sc{padding:4rem 0}
+.sh{text-align:center;margin-bottom:2.5rem}
+.st{font-size:2rem;font-weight:800;color:var(--kp);margin-bottom:.5rem}
+.ss{font-size:1rem;color:#6c757d;max-width:600px;margin:0 auto}
+.sd{width:50px;height:3px;background:var(--ac);margin:.75rem auto 0;border-radius:2px}
+.qac{background:#fff;border-radius:16px;padding:1.75rem;border:1px solid rgba(0,0,0,.06);box-shadow:0 4px 16px rgba(0,0,0,.04);transition:all .25s;height:100%;text-decoration:none;color:var(--tx);display:block}
+.qac:hover{transform:translateY(-4px);box-shadow:0 12px 32px rgba(0,0,0,.08);color:var(--tx);text-decoration:none}
+.qai{width:56px;height:56px;border-radius:14px;display:flex;align-items:center;justify-content:center;font-size:1.5rem;margin-bottom:1rem}
+.qai.g{background:rgba(82,183,136,.12);color:var(--kp)}
+.qai.a{background:rgba(245,158,11,.12);color:var(--wh)}
+.qai.b{background:rgba(14,165,233,.12);color:var(--sk)}
+.qai.r{background:rgba(220,38,38,.12);color:var(--dg)}
+.qat{font-size:1.1rem;font-weight:700;color:var(--kp);margin-bottom:.35rem}
+.qad{font-size:.88rem;color:#6c757d;margin-bottom:0}
+.cc{background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,.06);padding:1.5rem;box-shadow:0 2px 12px rgba(0,0,0,.03);transition:all .2s;height:100%}
+.cc:hover{box-shadow:0 8px 24px rgba(0,0,0,.06)}
+.cch{display:flex;align-items:flex-start;gap:.75rem;margin-bottom:1rem}
+.ci{width:44px;height:44px;background:rgba(82,183,136,.1);border-radius:10px;display:flex;align-items:center;justify-content:center;color:var(--kp);font-size:1.2rem;flex-shrink:0}
+.cn{font-weight:700;font-size:1.05rem;color:var(--kp);line-height:1.3}
+.cl{font-size:.82rem;color:#6c757d}
+.cd{display:grid;grid-template-columns:1fr 1fr;gap:.5rem;margin-bottom:1rem}
+.cd .dl{color:#6c757d;font-weight:500;font-size:.82rem}
+.cd .dv{color:var(--tx);font-weight:600;font-size:.82rem}
+.bvs{background:rgba(82,183,136,.1);color:var(--kp);border:1px solid rgba(82,183,136,.2);border-radius:8px;font-weight:600;font-size:.85rem;padding:.5rem 1rem;width:100%;text-decoration:none;display:inline-block;text-align:center}
+.bvs:hover{background:var(--kp);color:#fff;border-color:var(--kp)}
+.trw{background:#fff;border-radius:14px;border:1px solid rgba(0,0,0,.06);box-shadow:0 2px 12px rgba(0,0,0,.03);overflow:hidden}
+.kt{margin-bottom:0}
+.kt thead th{background:var(--kp);color:#fff;font-weight:600;font-size:.85rem;padding:.85rem 1rem;border:none;white-space:nowrap}
+.kt tbody td{padding:.75rem 1rem;vertical-align:middle;font-size:.9rem;border-color:rgba(0,0,0,.04)}
+.kt tbody tr:hover{background:rgba(82,183,136,.03)}
+.bo{background:rgba(82,183,136,.15);color:var(--kp);font-weight:600;padding:.3rem .7rem;border-radius:50px;font-size:.78rem}
+.bl2{background:rgba(245,158,11,.15);color:#92400e;font-weight:600;padding:.3rem .7rem;border-radius:50px;font-size:.78rem}
+.bf{background:rgba(220,38,38,.12);color:#991b1b;font-weight:600;padding:.3rem .7rem;border-radius:50px;font-size:.78rem}
+.cb{width:60px;height:6px;background:#e9ecef;border-radius:3px;overflow:hidden;display:inline-block;vertical-align:middle;margin-right:.4rem}
+.cbf{height:100%;border-radius:3px;background:var(--ac)}
+.cbf.limited{background:var(--wh)}
+.cbf.full{background:var(--dg)}
+.ltb{display:inline-flex;align-items:center;gap:.35rem;color:var(--kp);font-weight:600;font-size:.85rem;text-decoration:none;padding:.35rem .8rem;border-radius:6px;background:rgba(82,183,136,.08)}
+.ltb:hover{background:rgba(82,183,136,.15);color:var(--kp)}
+.nc{background:#fff;border-radius:12px;border:1px solid rgba(0,0,0,.06);border-left:3px solid var(--ac);padding:1.25rem;margin-bottom:.75rem;transition:all .2s}
+.nc:hover{box-shadow:0 4px 16px rgba(0,0,0,.05)}
+.nt{font-weight:700;font-size:1rem;color:var(--kp);margin-bottom:.3rem}
+.nd{font-size:.88rem;color:#6c757d;margin-bottom:0}
+.nf{border-left-color:var(--sk);background:rgba(14,165,233,.03)}
+.nfb{background:rgba(14,165,233,.1);color:var(--sk);font-size:.7rem;font-weight:700;padding:.15rem .5rem;border-radius:4px;text-transform:uppercase}
+.ws{background:linear-gradient(135deg,rgba(37,211,102,.06),rgba(18,140,126,.06));border:1px solid rgba(37,211,102,.2);border-radius:16px;padding:2.5rem;text-align:center}
+.wi{width:72px;height:72px;background:#25d366;border-radius:50%;display:flex;align-items:center;justify-content:center;margin:0 auto 1rem;font-size:2rem;color:#fff}
+.wt{font-size:1.3rem;font-weight:700;color:var(--kp);margin-bottom:.5rem}
+.wd{font-size:.95rem;color:#6c757d;margin-bottom:0}
+.csb{display:inline-block;background:rgba(245,158,11,.12);color:#92400e;font-weight:700;font-size:.8rem;padding:.3rem .8rem;border-radius:50px;margin-top:.75rem}
+.ft{background:linear-gradient(135deg,var(--kp3),var(--kp));color:rgba(255,255,255,.85);padding:3rem 0 1.5rem}
+.fb{display:flex;align-items:center;gap:.6rem;margin-bottom:1rem}
+.fbi{width:38px;height:38px;background:rgba(255,255,255,.1);border-radius:8px;display:flex;align-items:center;justify-content:center;color:var(--ac);font-size:1.1rem}
+.fbn{font-size:1.3rem;font-weight:800;color:#fff}
+.fd{font-size:.88rem;color:rgba(255,255,255,.65);line-height:1.6;margin-bottom:0}
+.fh{font-size:1rem;font-weight:700;color:#fff;margin-bottom:1rem}
+.fl{list-style:none;padding:0;margin:0}
+.fl li{margin-bottom:.5rem}
+.fl a{color:rgba(255,255,255,.65);text-decoration:none;font-size:.88rem}
+.fl a:hover{color:var(--ac)}
+.fbot{border-top:1px solid rgba(255,255,255,.1);margin-top:2rem;padding-top:1.25rem;text-align:center;font-size:.82rem;color:rgba(255,255,255,.5)}
+.fbot a{color:rgba(255,255,255,.6);text-decoration:none}
+.fbot a:hover{color:var(--ac)}
+.es{text-align:center;padding:2.5rem 1.5rem;color:#6c757d}
+.esi{font-size:2.5rem;color:#dee2e6;margin-bottom:.75rem}
+.est{font-size:.95rem;margin-bottom:0}
+.ls{display:flex;align-items:center;justify-content:center;padding:2rem;color:var(--kp)}
+</style>
 </head>
 <body>
-  <main>
-    <h1>KisanProcure</h1>
-    <p class="tag">SIH Prototype &middot; Problem Statement 26032</p>
-    <div class="box">
-      <p>Welcome to KisanProcure — the digital procurement platform for farmers.</p>
-      <div id="guestActions" class="auth-actions">
-        <a href="/login" class="btn-link">Login</a>
-        <a href="/register" class="btn-link">Register as Farmer</a>
-      </div>
-      <div id="authActions" class="auth-actions" style="display:none">
-        <a href="/farmer/dashboard" class="btn-link">Farmer Dashboard</a>
-        <a href="/admin/dashboard" class="btn-link">Admin Dashboard</a>
-      </div>
-      <p class="health-link">System status: <a href="/api/health">/api/health</a></p>
-    </div>
-  </main>
-
-  <script>
-    // If already authenticated, show dashboards instead of login/register.
-    if (localStorage.getItem("kp_access_token")) {
-      const guest = document.getElementById("guestActions");
-      const auth = document.getElementById("authActions");
-      if (guest) guest.style.display = "none";
-      if (auth) auth.style.display = "flex";
-    }
-    if ('serviceWorker' in navigator) {
-      window.addEventListener('load', () => {
-        navigator.serviceWorker.register('/static/service-worker.js').catch(() => {});
-      });
-    }
-  </script>
+<a href="#main-content" class="skip-link">Skip to main content</a>
+<div class="gb" role="navigation" aria-label="Government utility bar">
+<div class="container"><div class="gbi">
+<div class="gem"><i class="fa-solid fa-leaf el" aria-hidden="true"></i><span>Government of India</span><span class="d-none d-sm-inline">&middot;</span><span class="d-none d-sm-inline" style="font-weight:400">Ministry of Agriculture and Farmers Welfare</span></div>
+<div class="gu"><button class="lb active" onclick="switchLang('en')" aria-label="English">English</button><button class="lb" onclick="switchLang('hi')" aria-label="Hindi">Hindi</button><span class="dv"></span><a href="#accessibility" aria-label="Accessibility options"><i class="fa-solid fa-universal-access me-1"></i>Accessibility</a></div>
+</div></div></div>
+<header class="mh"><div class="container"><nav class="navbar navbar-expand-lg">
+<a class="nb" href="/"><div class="bi"><i class="fa-solid fa-wheat-awn" aria-hidden="true"></i></div><div class="bt"><span class="bn">KisanProcure</span><span class="bgt">Digital Procurement Platform</span></div></a>
+<button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+<div class="collapse navbar-collapse" id="mainNav"><ul class="navbar-nav mx-auto">
+<li class="nav-item"><a class="nl active" href="/">Home</a></li>
+<li class="nav-item"><a class="nl" href="#about">About Us</a></li>
+<li class="nav-item"><a class="nl" href="#msp">MSP Guidelines</a></li>
+<li class="nav-item"><a class="nl" href="#centres">Procurement Centres</a></li>
+<li class="nav-item"><a class="nl" href="#slots">Live Slots</a></li>
+<li class="nav-item"><a class="nl" href="#help">Help</a></li>
+</ul><div class="ha"><a href="/login" class="bl">Login</a><a href="/register" class="br">Register</a></div></div>
+</nav></div></header>
+<section class="hs" aria-label="Hero banner"><div class="container pr"><div class="row align-items-center g-4">
+<div class="col-lg-7">
+<h1 class="hh">Transforming Procurement:<br><span class="hl">Transparent, Efficient, Digital</span></h1>
+<p class="hsb">Empowering India's farmers with fair prices, shorter queues, and real-time updates.</p>
+<div class="hf"><span class="hft"><i class="fa-solid fa-indian-rupee-sign me-1"></i> Fair Prices</span><span class="hft"><i class="fa-solid fa-hourglass-half me-1"></i> Shorter Queues</span><span class="hft"><i class="fa-solid fa-bolt me-1"></i> Real-Time Updates</span><span class="hft"><i class="fa-solid fa-users me-1"></i> Empowered Farmers</span></div>
+<div class="hc"><a href="#slots" class="bhp"><i class="fa-solid fa-calendar-check" aria-hidden="true"></i>Book a Procurement Slot</a><a href="#slots" class="bhs"><i class="fa-solid fa-list-ol" aria-hidden="true"></i>Check Live Queue</a></div>
+</div>
+<div class="col-lg-5"><div class="acw"><div class="ac"><div class="ach"><div class="ats" role="tablist" aria-label="Select role">
+<button class="at active" role="tab" data-role="farmer" onclick="switchAuthTab('farmer')" aria-selected="true">FARMER</button>
+<button class="at" role="tab" data-role="staff" onclick="switchAuthTab('staff')" aria-selected="false">STAFF</button>
+<button class="at" role="tab" data-role="admin" onclick="switchAuthTab('admin')" aria-selected="false">ADMIN</button>
+</div></div>
+<div class="acb">
+<div id="authAlert" class="alert d-none alert-dismissible fade show mb-3" role="alert" aria-live="assertive" style="font-size:.88rem"><span id="authAlertMsg"></span><button type="button" class="btn-close" style="font-size:.7rem;padding:.5rem" onclick="hideAuthAlert()" aria-label="Close"></button></div>
+<div id="aff"><div class="ati"><i class="fa-solid fa-seedling me-2 text-success"></i>Farmer Login</div><div class="asu">Sign in to book slots and track your procurement</div>
+<form id="lff" novalidate><div class="mb-3"><label for="fe" class="form-label">Email address</label><input type="email" class="form-control" id="fe" placeholder="you@example.com" autocomplete="email" required autofocus></div>
+<div class="mb-3"><label for="fp" class="form-label">Password</label><input type="password" class="form-control" id="fp" placeholder="Enter your password" autocomplete="current-password" required></div>
+<button type="submit" class="bal" id="fb"><i class="fa-solid fa-right-to-bracket me-2"></i>Login as Farmer</button></form>
+<div class="aal">New farmer? <a href="/register">Register here</a></div></div>
+<div id="asf" class="d-none"><div class="ati"><i class="fa-solid fa-warehouse me-2 text-primary"></i>Staff Login</div><div class="asu">Access your procurement centre dashboard</div>
+<form id="lsf" novalidate><div class="mb-3"><label for="se" class="form-label">Email address</label><input type="email" class="form-control" id="se" placeholder="staff@kisanprocure.in" autocomplete="email" required></div>
+<div class="mb-3"><label for="sp" class="form-label">Password</label><input type="password" class="form-control" id="sp" placeholder="Enter your password" autocomplete="current-password" required></div>
+<button type="submit" class="bal" id="sb"><i class="fa-solid fa-right-to-bracket me-2"></i>Login as Staff</button></form></div>
+<div id="aaf" class="d-none"><div class="ati"><i class="fa-solid fa-shield-halved me-2" style="color:#6f42c1"></i>Admin Login</div><div class="asu">Access the admin analytics portal</div>
+<form id="laf" novalidate><div class="mb-3"><label for="ae" class="form-label">Email address</label><input type="email" class="form-control" id="ae" placeholder="admin@kisanprocure.in" autocomplete="email" required></div>
+<div class="mb-3"><label for="ap" class="form-label">Password</label><input type="password" class="form-control" id="ap" placeholder="Enter your password" autocomplete="current-password" required></div>
+<button type="submit" class="bal" id="ab" style="background:#4a148c"><i class="fa-solid fa-right-to-bracket me-2"></i>Login as Admin</button></form></div>
+</div></div></div></div></div></div></section>
+<main id="main-content">
+<section class="sc" id="quick-actions" style="background:var(--bg)"><div class="container"><div class="sh"><h2 class="st">Quick Actions</h2><p class="ss">Everything you need to manage your procurement journey</p><div class="sd"></div></div>
+<div class="row g-3"><div class="col-sm-6 col-lg-3"><a href="#slots" class="qac"><div class="qai g"><i class="fa-solid fa-calendar-check"></i></div><div class="qat">Book a Slot</div><p class="qad">Choose date, centre, and procurement time that suits you.</p></a></div>
+<div class="col-sm-6 col-lg-3"><a href="#slots" class="qac"><div class="qai a"><i class="fa-solid fa-list-ol"></i></div><div class="qat">Check Live Queue</div><p class="qad">View your token number and estimated waiting time.</p></a></div>
+<div class="col-sm-6 col-lg-3"><a href="#centres" class="qac"><div class="qai b"><i class="fa-solid fa-map-location-dot"></i></div><div class="qat">Find Procurement Center</div><p class="qad">View available mandi and procurement centres near you.</p></a></div>
+<div class="col-sm-6 col-lg-3"><a href="/login" class="qac"><div class="qai r"><i class="fa-solid fa-money-bill-transfer"></i></div><div class="qat">Track Payment</div><p class="qad">Track your procurement and payment status in real-time.</p></a></div>
+</div></div></section>
+<section class="sc" id="about" style="background:#fff"><div class="container"><div class="row align-items-center g-4"><div class="col-lg-6"><h2 class="st text-start">About KisanProcure</h2><div class="sd ms-0 mb-3"></div><p style="color:#6c757d;line-height:1.7">KisanProcure is a digital procurement platform designed to bring transparency and efficiency to agricultural procurement. Our mission is to ensure farmers receive fair prices while minimizing wait times through smart slot booking.</p></div>
+<div class="col-lg-6"><div class="row g-3"><div class="col-6"><div class="text-center p-3 rounded-3" style="background:rgba(82,183,136,.08)"><i class="fa-solid fa-building-wheat fa-2x mb-2" style="color:var(--kp)"></i><div class="fw-bold" style="color:var(--kp)">Digital Centers</div><small class="text-muted">Connected mandis</small></div></div><div class="col-6"><div class="text-center p-3 rounded-3" style="background:rgba(245,158,11,.08)"><i class="fa-solid fa-shield-halved fa-2x mb-2" style="color:var(--wh)"></i><div class="fw-bold" style="color:var(--kp)">Secure</div><small class="text-muted">Auth-protected</small></div></div></div></div></div></div></section>
+<section class="sc" id="msp" style="background:var(--bg)"><div class="container"><div class="sh"><h2 class="st">MSP Guidelines</h2><p class="ss">Minimum Support Price ensures fair compensation for farmers</p><div class="sd"></div></div><div class="row justify-content-center"><div class="col-lg-8"><div class="card border-0 shadow-sm rounded-4 p-4" style="background:#fff"><p style="color:#6c757d;line-height:1.7;margin-bottom:0">The Government of India announces Minimum Support Prices (MSP) for various agricultural commodities before each sowing season. KisanProcure procurement centres operate under the MSP framework to ensure farmers receive guaranteed fair prices for their produce.</p></div></div></div></div></section>
+<section class="sc" id="centres" style="background:#fff"><div class="container"><div class="sh"><h2 class="st">Procurement Centers</h2><p class="ss">Active government procurement centres currently accepting bookings</p><div class="sd"></div></div><div id="cc"><div class="ls"><div class="spinner-border text-success" role="status"><span class="visually-hidden">Loading centres...</span></div></div></div></div></section>
+<section class="sc" id="slots" style="background:var(--bg)"><div class="container"><div class="sh"><h2 class="st">Live Procurement Information</h2><p class="ss">Available slots at procurement centres - book yours today</p><div class="sd"></div></div><div id="sc"><div class="ls"><div class="spinner-border text-success" role="status"><span class="visually-hidden">Loading slots...</span></div></div></div></div></section>
+<section class="sc" id="notices" style="background:#fff"><div class="container"><div class="sh"><h2 class="st">Notice Board</h2><p class="ss">Circulars, notifications, and important updates</p><div class="sd"></div></div><div class="row justify-content-center"><div class="col-lg-8">
+<div class="nc nf"><div class="d-flex align-items-center gap-2 mb-1"><span class="nfb">Upcoming Feature</span></div><div class="nt">Circulars and Notifications</div><p class="nd">This section will display official circulars, procurement notifications, weather advisories, and MSP updates. Content will be published here as it becomes available.</p></div>
+<div class="nc nf"><div class="d-flex align-items-center gap-2 mb-1"><span class="nfb">Upcoming Feature</span></div><div class="nt">Procurement Schedules</div><p class="nd">Seasonal procurement schedules, centre-wise calendars, and holiday announcements will be posted here for farmer convenience.</p></div>
+</div></div></div></section>
+<section class="sc" id="help" style="background:var(--bg)"><div class="container"><div class="sh"><h2 class="st">Need Help?</h2><p class="ss">We are here to assist you with your procurement queries</p><div class="sd"></div></div><div class="row justify-content-center"><div class="col-lg-6"><div class="ws"><div class="wi"><i class="fa-brands fa-whatsapp" aria-hidden="true"></i></div><div class="wt">WhatsApp Assistance</div><p class="wd">Get quick support and booking assistance through WhatsApp. Our team is working to bring you this feature soon.</p><span class="csb"><i class="fa-solid fa-clock me-1"></i>Coming Soon</span></div></div></div></div></section>
+</main>
+<footer class="ft"><div class="container"><div class="row g-4"><div class="col-lg-4"><div class="fb"><div class="fbi"><i class="fa-solid fa-wheat-awn"></i></div><span class="fbn">KisanProcure</span></div><p class="fd">KisanProcure is a digital procurement platform prototype developed to bring transparency and efficiency to agricultural procurement for India's farmers.</p></div>
+<div class="col-6 col-lg-2"><div class="fh">Platform</div><ul class="fl"><li><a href="/">Home</a></li><li><a href="#about">About</a></li><li><a href="#centres">Centres</a></li><li><a href="#slots">Live Slots</a></li></ul></div>
+<div class="col-6 col-lg-2"><div class="fh">Support</div><ul class="fl"><li><a href="#help">Help</a></li><li><a href="#accessibility">Accessibility</a></li><li><a href="/login">Login</a></li><li><a href="/register">Register</a></li></ul></div>
+<div class="col-6 col-lg-2"><div class="fh">Legal</div><ul class="fl"><li><a href="#privacy">Privacy Policy</a></li><li><a href="#terms">Terms of Use</a></li><li><a href="#disclaimer">Disclaimer</a></li></ul></div>
+<div class="col-6 col-lg-2"><div class="fh">Contact</div><ul class="fl"><li><a href="#contact">Contact Us</a></li><li><a href="#feedback">Feedback</a></li><li><a href="/api/health">System Status</a></li></ul></div></div>
+<div class="fbot"><p class="mb-1"><strong>Disclaimer:</strong> KisanProcure is a prototype platform. It is not an official Government of India service. All data shown is for demonstration purposes only.</p><p class="mb-0">&copy; 2026 KisanProcure &middot; Developed for Smart India Hackathon</p></div></div></footer>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<script src="/static/js/auth.js"></script>
+<script src="/static/js/landing.js"></script>
 </body>
 </html>
