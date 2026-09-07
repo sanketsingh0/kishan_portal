@@ -12,7 +12,7 @@ Creates a configured Flask application:
 import os
 
 from dotenv import load_dotenv
-from flask import Flask
+from flask import Flask, jsonify, request
 
 from config import config_map, demo_seed_on_start_enabled
 from app.extensions import db, migrate, scheduler, socketio
@@ -106,6 +106,29 @@ def create_app(config_name: str | None = None) -> Flask:
         if request.path.startswith("/api/"):
             response.headers["Cache-Control"] = "no-store, no-cache, must-revalidate, max-age=0"
         return response
+
+    # --- API Error Handlers ------------------------------------------------
+    @app.errorhandler(404)
+    def handle_api_404(e):
+        from flask import request
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Not Found", "message": "The requested API endpoint was not found."}), 404
+        return e
+
+    @app.errorhandler(405)
+    def handle_api_405(e):
+        from flask import request
+        if request.path.startswith("/api/"):
+            return jsonify({"error": "Method Not Allowed", "message": "The HTTP method is not allowed for this endpoint."}), 405
+        return e
+
+    @app.errorhandler(500)
+    def handle_api_500(e):
+        from flask import request
+        if request.path.startswith("/api/"):
+            app.logger.error("API Internal Error: %s", e)
+            return jsonify({"error": "Server Error", "message": "An internal server error occurred."}), 500
+        return e
 
     # --- CLI commands (flask seed-demo, ...) -----------------------------------
     register_cli(app)
