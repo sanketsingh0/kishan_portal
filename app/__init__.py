@@ -137,6 +137,7 @@ def _seed_demo_on_startup(app: Flask) -> None:
     from app.services.full_seed import seed_demo_full
 
     with app.app_context():
+        db.create_all()
         stats = seed_demo_full()
 
     app.logger.info(

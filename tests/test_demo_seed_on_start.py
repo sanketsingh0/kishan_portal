@@ -38,9 +38,9 @@ def _prepare_file_db(uri):
 def _make_startup_app(monkeypatch, tmp_path, flag):
     """Point TestingConfig at a fresh file DB and build the app once."""
     uri = _file_db_uri(tmp_path)
-    _prepare_file_db(uri)
     monkeypatch.setattr(config_module.TestingConfig, "SQLALCHEMY_DATABASE_URI", uri)
     monkeypatch.setenv("DEMO_SEED_ON_START", flag)
+    _prepare_file_db(uri)
     return create_app("testing"), uri
 
 
@@ -149,11 +149,11 @@ def test_repeated_startup_does_not_duplicate_data(monkeypatch, tmp_path):
 def test_truthy_env_values_enable_and_falsy_disable(monkeypatch, tmp_path):
     for truthy in ("1", "yes", "on", "TRUE"):
         uri = _file_db_uri(tmp_path)
-        _prepare_file_db(uri)
         monkeypatch.setattr(
             config_module.TestingConfig, "SQLALCHEMY_DATABASE_URI", uri
         )
         monkeypatch.setenv("DEMO_SEED_ON_START", truthy)
+        _prepare_file_db(uri)
         app = create_app("testing")
         assert app.config["DEMO_SEED_ON_START"] is True, truthy
 
@@ -161,3 +161,12 @@ def test_truthy_env_values_enable_and_falsy_disable(monkeypatch, tmp_path):
         monkeypatch.setenv("DEMO_SEED_ON_START", falsy)
         app = create_app("testing")
         assert app.config["DEMO_SEED_ON_START"] is False, falsy
+
+
+def test_notifications_table_exists_when_seed_runs(monkeypatch, tmp_path):
+    app, uri = _make_startup_app(monkeypatch, tmp_path, "true")
+    from sqlalchemy import inspect
+    with app.app_context():
+        inspector = inspect(db.engine)
+        tables = inspector.get_table_names()
+        assert "notifications" in tables
