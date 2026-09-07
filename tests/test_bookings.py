@@ -805,4 +805,157 @@ class TestTokenGeneration:
             assert r2.get_json()["booking"]["token_number"] == "K-0002"
 
 
+class TestActiveBookingDatabaseIntegrity:
+    """Task 19 Regression Tests for Database Integrity and Partial Unique Index."""
+
+    def test_regression_a_same_farmer_same_slot_active_booking_rejected(self, client, farmer_user, base_booking_data):
+        """A. Same farmer + same slot + active booking -> second booking rejected."""
+        slot_id = base_booking_data["slot_1"].id
+        su = make_mock_user(user_id="farmer-uuid-1")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su
+
+            # First active booking
+            r1 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r1.status_code == 201
+
+            # Second active booking for same slot -> 409 DUPLICATE_BOOKING
+            r2 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r2.status_code == 409
+            data = r2.get_json()
+            assert data["code"] == "DUPLICATE_BOOKING"
+            assert "already have a booking" in data["message"].lower()
+
+    def test_regression_b_same_farmer_same_slot_after_cancellation_allowed(self, client, farmer_user, base_booking_data):
+        """B. Same farmer + same slot after cancellation -> new booking allowed."""
+        slot_id = base_booking_data["slot_1"].id
+        su = make_mock_user(user_id="farmer-uuid-1")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su
+
+            # Initial booking
+            r1 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r1.status_code == 201
+            b_id = r1.get_json()["booking"]["id"]
+
+            # Cancel booking
+            r_cancel = client.put(f"/api/bookings/{b_id}/cancel", headers=auth_header())
+            assert r_cancel.status_code == 200
+
+            # Re-book same slot -> Allowed (201)
+            r2 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r2.status_code == 201
+
+    def test_regression_c_different_farmer_same_slot_allowed(self, client, farmer_user, farmer_user_2, base_booking_data):
+        """C. Different farmer + same slot -> allowed until capacity is reached."""
+        slot_id = base_booking_data["slot_1"].id  # capacity = 2
+
+        # Farmer 1 books slot_1
+        su1 = make_mock_user(user_id="farmer-uuid-1")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su1
+
+            r1 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r1.status_code == 201
+
+        # Farmer 2 books same slot_1 -> 201
+        su2 = make_mock_user(user_id="farmer-uuid-2")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su2
+
+            r2 = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert r2.status_code == 201
+
+    def test_regression_d_same_farmer_different_slot_allowed(self, client, farmer_user, base_booking_data, app):
+        """D. Same farmer + different slot -> allowed if no time conflict."""
+        slot_1_id = base_booking_data["slot_1"].id  # 09:00 - 10:00 on Tomorrow
+        slot_2_id = base_booking_data["slot_2"].id  # 10:00 - 11:00 on Tomorrow (Adjacent, non-overlapping)
+
+        su = make_mock_user(user_id="farmer-uuid-1")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su
+
+            r1 = client.post("/api/bookings", json={"slot_id": slot_1_id}, headers=auth_header())
+            assert r1.status_code == 201
+
+            r2 = client.post("/api/bookings", json={"slot_id": slot_2_id}, headers=auth_header())
+            assert r2.status_code == 201
+
+    def test_regression_e_existing_application_level_duplicate_booking_409(self, client, farmer_user, base_booking_data):
+        """E. Existing application-level DUPLICATE_BOOKING behavior returns 409."""
+        slot_id = base_booking_data["slot_1"].id
+        su = make_mock_user(user_id="farmer-uuid-1")
+        with patch("app.auth.service.get_supabase_client") as mock_gc:
+            mock_client = MagicMock()
+            mock_gc.return_value = mock_client
+            mock_client.auth.get_user.return_value.user = su
+
+            client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            resp = client.post("/api/bookings", json={"slot_id": slot_id}, headers=auth_header())
+            assert resp.status_code == 409
+            assert resp.get_json()["error"] == "Conflict"
+            assert resp.get_json()["code"] == "DUPLICATE_BOOKING"
+
+    def test_regression_f_alembic_migration_creates_partial_index(self, app):
+        """F. Verify Alembic migration / model schema contains the active booking unique index."""
+        from sqlalchemy import inspect
+        with app.app_context():
+            inspector = inspect(db.engine)
+            indexes = inspector.get_indexes("bookings")
+            idx_names = [i["name"] for i in indexes]
+            assert "uq_active_booking_farmer_slot" in idx_names
+
+    def test_regression_g_db_integrity_error_mapped_to_duplicate_booking(self, app, farmer_user, base_booking_data):
+        """G. Verify IntegrityError on unique index violation raises DUPLICATE_BOOKING conflict."""
+        from sqlalchemy.exc import IntegrityError
+        from app.services.booking_service import create_booking, BookingConflictError, BookingError
+
+        with app.app_context():
+            farmer = Farmer.query.filter_by(name="Ramesh Kumar").first()
+            slot = base_booking_data["slot_1"]
+
+            # Mock commit to raise IntegrityError for uq_active_booking_farmer_slot
+            with patch.object(
+                db.session,
+                "commit",
+                side_effect=IntegrityError("INSERT statement failed", {}, Exception("UNIQUE constraint failed: bookings.farmer_id, bookings.slot_id (uq_active_booking_farmer_slot)"))
+            ):
+                with pytest.raises(BookingConflictError) as exc_info:
+                    create_booking(user_id=farmer.user_id, slot_id=slot.id)
+                assert exc_info.value.code == "DUPLICATE_BOOKING"
+                assert "already have a booking" in exc_info.value.message.lower()
+
+    def test_regression_unrelated_integrity_error_not_mapped_to_duplicate_booking(self, app, farmer_user, base_booking_data):
+        """Verify unrelated IntegrityError is NOT converted to DUPLICATE_BOOKING."""
+        from sqlalchemy.exc import IntegrityError
+        from app.services.booking_service import create_booking, BookingConflictError, BookingError
+
+        with app.app_context():
+            farmer = Farmer.query.filter_by(name="Ramesh Kumar").first()
+            slot = base_booking_data["slot_1"]
+
+            # Mock commit to raise an unrelated IntegrityError (e.g. foreign key constraint failure)
+            with patch.object(
+                db.session,
+                "commit",
+                side_effect=IntegrityError("INSERT statement failed", {}, Exception("FOREIGN KEY constraint failed"))
+            ):
+                with pytest.raises(BookingError) as exc_info:
+                    create_booking(user_id=farmer.user_id, slot_id=slot.id)
+                assert not isinstance(exc_info.value, BookingConflictError)
+                assert exc_info.value.code == "BOOKING_ERROR"
+                assert "Database error creating booking" in exc_info.value.message
+
+
+
 

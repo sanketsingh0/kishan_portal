@@ -4,6 +4,7 @@ Represents a farmer's procurement slot booking.
 """
 
 from datetime import datetime
+from sqlalchemy import text
 
 from app.extensions import db
 from app.models.common import TimestampMixin, utcnow
@@ -26,6 +27,14 @@ class Booking(TimestampMixin, db.Model):
     __tablename__ = "bookings"
     __table_args__ = (
         db.Index("idx_booking_farmer_slot_status", "farmer_id", "slot_id", "status"),
+        db.Index(
+            "uq_active_booking_farmer_slot",
+            "farmer_id",
+            "slot_id",
+            unique=True,
+            postgresql_where=text("status IN ('PENDING', 'CONFIRMED')"),
+            sqlite_where=text("status IN ('PENDING', 'CONFIRMED')"),
+        ),
     )
 
     id = db.Column(db.Integer, primary_key=True)

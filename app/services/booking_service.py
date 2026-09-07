@@ -5,6 +5,7 @@ and time-conflict prevention for farmer slot bookings.
 """
 
 from datetime import date, datetime, timezone
+from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.models import Booking, BookingStatus, Slot, SlotStatus, Farmer, Centre
 from app.services.farmer_service import get_farmer_by_user_id
@@ -189,6 +190,15 @@ def create_booking(user_id: int, slot_id: int) -> Booking:
     try:
         db.session.add(booking)
         db.session.commit()
+    except IntegrityError as exc:
+        db.session.rollback()
+        err_msg = str(exc).lower()
+        if "uq_active_booking_farmer_slot" in err_msg or "unique constraint" in err_msg or "unique" in err_msg:
+            raise BookingConflictError(
+                "You already have a booking for this slot.",
+                code="DUPLICATE_BOOKING"
+            )
+        raise BookingError(f"Database error creating booking: {exc}")
     except Exception as exc:
         db.session.rollback()
         raise BookingError(f"Database error creating booking: {exc}")
