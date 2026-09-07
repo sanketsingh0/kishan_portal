@@ -338,6 +338,93 @@
   <!-- Shared auth helpers (token storage + 401 redirect) -->
   <script src="/static/js/auth.js"></script>
 
+  <!-- Delay Modal -->
+  <div class="modal fade" id="delayModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content border-0 shadow rounded-4">
+        <form id="delayForm">
+          <div class="modal-header bg-primary text-white border-0">
+            <h5 class="modal-title fw-bold" id="delayModalTitle"><i class="fa-solid fa-clock-rotate-left me-2"></i>Record Procurement Delay</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div id="delayModalAlert" class="alert alert-danger d-none"></div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Procurement Centre *</label>
+              <select id="delayCentreId" class="form-select" required></select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Delay Date *</label>
+              <input type="date" id="delayDate" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Slot ID (Optional)</label>
+              <input type="number" id="delaySlotId" class="form-control" placeholder="Leave empty for entire centre/date">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Delay Minutes *</label>
+              <input type="number" id="delayMinutes" class="form-control" min="1" max="1440" required placeholder="e.g. 30">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Reason</label>
+              <textarea id="delayReason" class="form-control" rows="2" placeholder="e.g. Weighbridge equipment maintenance"></textarea>
+            </div>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary">Save Delay</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <!-- Staff Modal -->
+  <div class="modal fade" id="staffModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content border-0 shadow rounded-4">
+        <form id="staffForm">
+          <div class="modal-header bg-primary text-white border-0">
+            <h5 class="modal-title fw-bold" id="staffModalTitle"><i class="fa-solid fa-users-gear me-2"></i>Add Staff</h5>
+            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body p-4">
+            <div id="staffModalAlert" class="alert alert-danger d-none"></div>
+
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Full Name *</label>
+              <input type="text" id="staffName" class="form-control" required minlength="2" maxlength="120">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Email *</label>
+              <input type="email" id="staffEmail" class="form-control" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Phone</label>
+              <input type="tel" id="staffPhone" class="form-control" maxlength="20">
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Assign Centre</label>
+              <select id="staffCentreId" class="form-select">
+                <option value="">-- No Centre Assigned --</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Temporary Password</label>
+              <input type="text" id="staffPassword" class="form-control" placeholder="Auto-generated if empty">
+              <small class="text-muted">Staff can change password after first login.</small>
+            </div>
+          </div>
+          <div class="modal-footer border-0">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-kp-primary">Save Staff</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
   <script>
     function showAlert(msg, type = "success") {
       const box = document.getElementById("alertBox");
@@ -390,6 +477,10 @@
         `).join("");
       } catch (err) {
         console.error(err);
+        const centreTbody = document.getElementById("centresTableBody");
+        if (centreTbody) {
+          centreTbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4"><i class="fa-solid fa-circle-exclamation me-2"></i>Unable to load centres. Please try again.<br><small class="text-muted">${err && err.message ? err.message : String(err)}</small></td></tr>`;
+        }
       }
     }
 
@@ -434,6 +525,10 @@
         `).join("");
       } catch (err) {
         console.error(err);
+        const cropTbody = document.getElementById("cropsTableBody");
+        if (cropTbody) {
+          cropTbody.innerHTML = `<tr><td colspan="5" class="text-center text-danger py-4"><i class="fa-solid fa-circle-exclamation me-2"></i>Unable to load crops. Please try again.<br><small class="text-muted">${err && err.message ? err.message : String(err)}</small></td></tr>`;
+        }
       }
     }
 
@@ -854,91 +949,5 @@
     }
   </script>
 
-  <!-- Delay Modal -->
-  <div class="modal fade" id="delayModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content border-0 shadow rounded-4">
-        <form id="delayForm">
-          <div class="modal-header bg-primary text-white border-0">
-            <h5 class="modal-title fw-bold" id="delayModalTitle"><i class="fa-solid fa-clock-rotate-left me-2"></i>Record Procurement Delay</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body p-4">
-            <div id="delayModalAlert" class="alert alert-danger d-none"></div>
-
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Procurement Centre *</label>
-              <select id="delayCentreId" class="form-select" required></select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Delay Date *</label>
-              <input type="date" id="delayDate" class="form-control" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Slot ID (Optional)</label>
-              <input type="number" id="delaySlotId" class="form-control" placeholder="Leave empty for entire centre/date">
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Delay Minutes *</label>
-              <input type="number" id="delayMinutes" class="form-control" min="1" max="1440" required placeholder="e.g. 30">
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Reason</label>
-              <textarea id="delayReason" class="form-control" rows="2" placeholder="e.g. Weighbridge equipment maintenance"></textarea>
-            </div>
-          </div>
-          <div class="modal-footer border-0">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-kp-primary">Save Delay</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
-
-  <!-- Staff Modal -->
-  <div class="modal fade" id="staffModal" tabindex="-1">
-    <div class="modal-dialog">
-      <div class="modal-content border-0 shadow rounded-4">
-        <form id="staffForm">
-          <div class="modal-header bg-primary text-white border-0">
-            <h5 class="modal-title fw-bold" id="staffModalTitle"><i class="fa-solid fa-users-gear me-2"></i>Add Staff</h5>
-            <button type="button" class="btn-close btn-close-white" data-bs-dismiss="modal"></button>
-          </div>
-          <div class="modal-body p-4">
-            <div id="staffModalAlert" class="alert alert-danger d-none"></div>
-
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Full Name *</label>
-              <input type="text" id="staffName" class="form-control" required minlength="2" maxlength="120">
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Email *</label>
-              <input type="email" id="staffEmail" class="form-control" required>
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Phone</label>
-              <input type="tel" id="staffPhone" class="form-control" maxlength="20">
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Assign Centre</label>
-              <select id="staffCentreId" class="form-select">
-                <option value="">-- No Centre Assigned --</option>
-              </select>
-            </div>
-            <div class="mb-3">
-              <label class="form-label fw-semibold">Temporary Password</label>
-              <input type="text" id="staffPassword" class="form-control" placeholder="Auto-generated if empty">
-              <small class="text-muted">Staff can change password after first login.</small>
-            </div>
-          </div>
-          <div class="modal-footer border-0">
-            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-            <button type="submit" class="btn btn-kp-primary">Save Staff</button>
-          </div>
-        </form>
-      </div>
-    </div>
-  </div>
 </body>
 </html>
