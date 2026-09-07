@@ -41,6 +41,126 @@ class TestAdminManagementPage:
     def test_admin_management_has_staff_section(self, client):
         resp = client.get("/admin/management")
         assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "Staff Management" in html or "staff-pane" in html
+
+    def test_admin_management_has_staff_table(self, client):
+        """The staff pane must have a table to display staff records."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "staffTableBody" in html
+
+    def test_admin_management_has_add_staff_button(self, client):
+        """The staff pane must have an 'Add Staff' button."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "Add New Staff" in html or "Add Staff" in html
+
+    def test_admin_management_has_staff_modal(self, client):
+        """The staff modal must exist for creating/editing staff."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'id="staffModal"' in html
+
+    def test_admin_management_has_staff_form(self, client):
+        """The staff form must have all required fields."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        # Staff form fields
+        assert 'id="staffForm"' in html
+        assert 'id="staffName"' in html
+        assert 'id="staffEmail"' in html
+        assert 'id="staffPhone"' in html
+        assert 'id="staffCentreId"' in html
+        assert 'id="staffPassword"' in html
+
+    def test_admin_management_staff_form_has_centre_dropdown(self, client):
+        """The staff form must have a centre dropdown for assignment."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'id="staffCentreId"' in html
+        assert "Assign Centre" in html or "No Centre Assigned" in html
+
+    def test_admin_management_staff_tab_button_exists(self, client):
+        """The staff tab button must exist and target the staff pane."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'id="staff-tab"' in html
+        assert 'data-bs-target="#staff-pane"' in html
+
+    def test_admin_management_staff_pane_exists(self, client):
+        """The staff pane must exist with correct ID."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'id="staff-pane"' in html
+
+    def test_admin_management_loadstaff_function_defined(self, client):
+        """The loadStaff function must be defined to load staff data."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function loadStaff()" in html or "async function loadStaff()" in html
+
+    def test_admin_management_openCreateStaffModal_function_defined(self, client):
+        """The openCreateStaffModal function must be defined."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function openCreateStaffModal()" in html
+
+    def test_admin_management_openEditStaffModal_function_defined(self, client):
+        """The openEditStaffModal function must be defined."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function openEditStaffModal(" in html
+
+    def test_admin_management_deactivateStaff_function_defined(self, client):
+        """The deactivateStaff function must be defined."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function deactivateStaff(" in html or "async function deactivateStaff(" in html
+
+    def test_admin_management_activateStaff_function_defined(self, client):
+        """The activateStaff function must be defined."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function activateStaff(" in html or "async function activateStaff(" in html
+
+    def test_admin_management_populateStaffCentreSelect_function_defined(self, client):
+        """The populateStaffCentreSelect function must be defined."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "function populateStaffCentreSelect(" in html
+
+    def test_admin_management_staff_api_calls_present(self, client):
+        """The staff management must call the correct API endpoints."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        # Staff API endpoints
+        assert "/api/admin/staff" in html
+        assert '"POST"' in html or "'POST'" in html
+        assert '"PUT"' in html or "'PUT'" in html
+        assert '"DELETE"' in html or "'DELETE'" in html
+
+    def test_admin_management_staff_tab_onclick_loads_staff(self, client):
+        """The staff tab must call loadStaff() when clicked."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "loadStaff()" in html
+
 class TestAdminManagementActions:
     def test_centre_create_action_exists(self, client):
         resp = client.get("/admin/management")
