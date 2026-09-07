@@ -268,10 +268,14 @@ def get_current_user():
     local_user = g.current_user
     supabase_user = g.supabase_user
 
+    user_email = getattr(supabase_user, "email", None)
+    if user_email is not None and not isinstance(user_email, str):
+        user_email = str(user_email)
+
     response = {
         "id": local_user.id,
         "supabase_user_id": local_user.supabase_user_id,
-        "email": supabase_user.email,
+        "email": user_email,
         "role": local_user.role,
         "active": local_user.is_active,
     }
@@ -286,6 +290,16 @@ def get_current_user():
             "city": farmer.city,
             "state": farmer.state,
             "pincode": farmer.pincode,
+        }
+    elif local_user.role == UserRole.STAFF and local_user.staff:
+        staff = local_user.staff
+        response["profile"] = {
+            "id": staff.id,
+            "name": staff.name,
+            "phone": staff.phone,
+            "centre_id": staff.centre_id,
+            "centre_name": staff.centre.name if staff.centre else None,
+            "centre_location": staff.centre.location if staff.centre else None,
         }
 
     return jsonify({"user": response}), 200

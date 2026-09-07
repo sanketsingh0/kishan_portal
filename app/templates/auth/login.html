@@ -154,7 +154,7 @@ function hideAlert() {
       const next = getSafeNextParam();
       if (next) return next;
       if (role === "ADMIN") return "/admin/dashboard";
-      if (role === "STAFF") return "/admin/management";
+      if (role === "STAFF") return "/staff/dashboard";
       return "/farmer/dashboard";
     }
 

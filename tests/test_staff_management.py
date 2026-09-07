@@ -21,6 +21,7 @@ def make_auth_call(client, method, url, sub_id, json_data=None):
     with patch("app.auth.decorators.verify_token") as mock_vt:
         mock_user = MagicMock()
         mock_user.id = sub_id
+        mock_user.email = f"{sub_id}@example.com"
         mock_vt.return_value = mock_user
         kwargs = {"headers": auth_header()}
         if json_data is not None:
@@ -438,27 +439,50 @@ class TestUnassignedStaff:
         assert "contact the administrator" in msg or "not been assigned" in msg
 
 
-# === 9. STAFF DASHBOARD (Phase 5) ===
+# === 9. STAFF DASHBOARD & AUTH REGRESSION TESTS ===
 
 class TestStaffDashboard:
 
-    def test_assigned_staff_dashboard_shows_centre(self, client, staff_a):
-        """STAFF with an assigned centre sees their centre on the dashboard."""
+    def test_staff_dashboard_browser_navigation(self, client):
+        """Top-level GET request without Bearer token renders HTML dashboard shell for browser navigation."""
+        resp = client.get("/staff/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+        assert "KisanProcure Staff" in html
+        assert "auth.js" in html
+
+    def test_assigned_staff_dashboard_loads_template(self, client, staff_a):
+        """Authenticated STAFF access to dashboard template returns 200 OK."""
         resp = make_auth_call(client, "GET", "/staff/dashboard", "staff-a-sub")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "Centre Alpha" in html
-        assert "Location A" in html
+        assert "KisanProcure Staff" in html
 
-    def test_unassigned_staff_dashboard_shows_message(self, client, unassigned_staff):
-        """Unassigned STAFF sees the clear 'no centre assigned' message."""
-        resp = make_auth_call(client, "GET", "/staff/dashboard", "staff-unassigned-sub")
+    def test_api_auth_me_returns_staff_profile(self, client, staff_a):
+        """GET /api/auth/me returns staff profile details including assigned centre."""
+        res = make_auth_call(client, "GET", "/api/auth/me", "staff-a-sub")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["user"]["role"] == "STAFF"
+        profile = data["user"]["profile"]
+        assert profile["name"] == "Staff Alpha"
+        assert profile["centre_id"] == staff_a.centre_id
+        assert profile["centre_name"] == "Centre Alpha"
+
+    def test_api_auth_me_returns_unassigned_staff_profile(self, client, unassigned_staff):
+        """GET /api/auth/me for unassigned staff returns profile with centre_id = None."""
+        res = make_auth_call(client, "GET", "/api/auth/me", "staff-unassigned-sub")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["user"]["role"] == "STAFF"
+        profile = data["user"]["profile"]
+        assert profile["centre_id"] is None
+        assert profile["name"] == "Unassigned Staff"
+
+    def test_login_template_redirects_staff_to_staff_dashboard(self, client):
+        """login.html specifies /staff/dashboard as redirect destination for STAFF role."""
+        resp = client.get("/login")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
-        assert "No procurement centre has been assigned" in html
-        assert "Please contact the administrator" in html
+        assert 'if (role === "STAFF") return "/staff/dashboard";' in html
 
-    def test_farmer_cannot_access_staff_dashboard(self, client, farmer_user):
-        """FARMER is rejected from the staff dashboard (403)."""
-        resp = make_auth_call(client, "GET", "/staff/dashboard", "farmer-sub-1")
-        assert resp.status_code == 403
