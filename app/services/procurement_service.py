@@ -5,7 +5,7 @@ Handles business logic and database operations for Procurement status tracking.
 
 from datetime import datetime, date
 from app.extensions import db
-from app.models import Booking, Procurement, ProcurementStatus
+from app.models import Booking, BookingStatus, Procurement, ProcurementStatus
 from app.services.farmer_service import get_farmer_by_user_id
 from app.queue.events import emit_procurement_update
 
@@ -119,6 +119,11 @@ def create_procurement(booking_id: int, data: dict) -> Procurement:
 
     if errors:
         raise ProcurementValidationError(errors)
+
+    if status in (ProcurementStatus.COMPLETED, ProcurementStatus.REJECTED):
+        booking.status = BookingStatus.COMPLETED
+        if status == ProcurementStatus.COMPLETED and procurement_date is None:
+            procurement_date = date.today()
 
     procurement = Procurement(
         booking_id=booking.id,
@@ -242,6 +247,11 @@ def update_procurement(booking_id: int, data: dict) -> Procurement:
 
     new_status = procurement.procurement_status
     status_changed = old_status != new_status
+
+    if new_status in (ProcurementStatus.COMPLETED, ProcurementStatus.REJECTED):
+        booking.status = BookingStatus.COMPLETED
+        if new_status == ProcurementStatus.COMPLETED and procurement.procurement_date is None:
+            procurement.procurement_date = date.today()
 
     try:
         db.session.commit()

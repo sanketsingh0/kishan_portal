@@ -71,6 +71,21 @@ def list_slots():
     slot_date = request.args.get("date") or request.args.get("slot_date")
     status = request.args.get("status")
 
+    if user_role == UserRole.STAFF:
+        from app.models import Staff
+        staff = Staff.query.filter_by(user_id=g.current_user.id).first()
+        if not staff or staff.centre_id is None:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "No procurement centre has been assigned to your account. Please contact the administrator.",
+            }), 403
+        if centre_id is not None and centre_id != staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+        centre_id = staff.centre_id
+
     # Farmers only see upcoming OPEN slots
     upcoming_only = not is_staff_or_admin
 
@@ -101,6 +116,20 @@ def get_slot(slot_id: int):
     if not slot:
         return jsonify({"error": "Not Found", "message": "Slot not found or unavailable."}), 404
 
+    if user_role == UserRole.STAFF:
+        from app.models import Staff
+        staff = Staff.query.filter_by(user_id=g.current_user.id).first()
+        if not staff or staff.centre_id is None:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "No procurement centre has been assigned to your account. Please contact the administrator.",
+            }), 403
+        if slot.centre_id != staff.centre_id:
+            return jsonify({
+                "error": "Forbidden",
+                "message": "Access denied for this centre.",
+            }), 403
+
     return jsonify({"slot": _format_slot(slot)}), 200
 
 
@@ -129,7 +158,9 @@ def add_slot():
     # Centre isolation: STAFF may only create slots for their own centre
     if g.current_user.role == UserRole.STAFF:
         target_centre_id = data.get("centre_id")
-        if target_centre_id != g.current_staff.centre_id:
+        if target_centre_id is None:
+            data["centre_id"] = g.current_staff.centre_id
+        elif target_centre_id != g.current_staff.centre_id:
             return jsonify({
                 "error": "Forbidden",
                 "message": "Access denied for this centre.",

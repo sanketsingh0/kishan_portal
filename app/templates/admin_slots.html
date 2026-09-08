@@ -202,6 +202,8 @@
   <script>
     let centresList = [];
     let cropsList = [];
+    let currentUserRole = null;
+    let staffCentreId = null;
 
     function showAlert(msg, type = "success") {
       const box = document.getElementById("alertBox");
@@ -214,6 +216,19 @@
       const headers = window.KP.buildAuthHeaders();
 
       try {
+        const meRes = await window.KP.authFetch("/api/auth/me");
+        if (meRes.ok) {
+          const meData = await meRes.json();
+          currentUserRole = meData.user ? meData.user.role : null;
+          if (currentUserRole === "STAFF" && meData.user.profile) {
+            staffCentreId = meData.user.profile.centre_id;
+          }
+        }
+      } catch (e) {
+        console.error("Error fetching user profile:", e);
+      }
+
+      try {
         const [cRes, crRes] = await Promise.all([
           fetch("/api/centres?all=true", { headers }),
           fetch("/api/crops?all=true", { headers })
@@ -223,8 +238,18 @@
           centresList = cData.centres || [];
           const cSelect = document.getElementById("filterCentre");
           const mSelect = document.getElementById("slotCentre");
-          cSelect.innerHTML = `<option value="">All Centres</option>` + centresList.map(c => `<option value="${c.id}">${c.name} (${c.location})</option>`).join("");
-          mSelect.innerHTML = centresList.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+
+          if (currentUserRole === "STAFF" && staffCentreId) {
+            const assignedCentre = centresList.find(c => c.id === staffCentreId);
+            const centreName = assignedCentre ? assignedCentre.name : `Centre #${staffCentreId}`;
+            cSelect.innerHTML = `<option value="${staffCentreId}">${centreName} (Assigned)</option>`;
+            cSelect.disabled = true;
+            mSelect.innerHTML = `<option value="${staffCentreId}">${centreName}</option>`;
+            mSelect.disabled = true;
+          } else {
+            cSelect.innerHTML = `<option value="">All Centres</option>` + centresList.map(c => `<option value="${c.id}">${c.name} (${c.location})</option>`).join("");
+            mSelect.innerHTML = centresList.filter(c => c.is_active).map(c => `<option value="${c.id}">${c.name}</option>`).join("");
+          }
         }
         if (crRes.ok) {
           const crData = await crRes.json();
@@ -240,7 +265,10 @@
     }
 
     async function loadSlots() {
-      const cId = document.getElementById("filterCentre").value;
+      let cId = document.getElementById("filterCentre").value;
+      if (currentUserRole === "STAFF" && staffCentreId) {
+        cId = staffCentreId;
+      }
       const crId = document.getElementById("filterCrop").value;
       const d = document.getElementById("filterDate").value;
       const st = document.getElementById("filterStatus").value;
@@ -303,6 +331,10 @@
       document.getElementById("slotId").value = "";
       document.getElementById("slotModalTitle").innerText = "Create Procurement Slot";
       document.getElementById("slotForm").reset();
+      if (currentUserRole === "STAFF" && staffCentreId) {
+        document.getElementById("slotCentre").value = staffCentreId;
+        document.getElementById("slotCentre").disabled = true;
+      }
       // Default to tomorrow's date
       const tomorrow = new Date();
       tomorrow.setDate(tomorrow.getDate() + 1);
@@ -315,6 +347,9 @@
       document.getElementById("slotId").value = s.id;
       document.getElementById("slotModalTitle").innerText = "Edit Procurement Slot";
       document.getElementById("slotCentre").value = s.centre_id;
+      if (currentUserRole === "STAFF" && staffCentreId) {
+        document.getElementById("slotCentre").disabled = true;
+      }
       document.getElementById("slotCrop").value = s.crop_id;
       document.getElementById("slotDate").value = s.slot_date;
       document.getElementById("slotStart").value = s.start_time;

@@ -6,7 +6,7 @@ and estimated waiting time calculations per centre and date scope, including act
 
 from datetime import date
 from app.extensions import db
-from app.models import Booking, BookingStatus, Slot, Centre
+from app.models import Booking, BookingStatus, Slot, Centre, Procurement, ProcurementStatus
 from app.services.farmer_service import get_farmer_by_user_id
 from app.services.slot_service import format_date_string, format_time_string
 from app.services.delay_service import get_active_delays_for_scope, calculate_active_delay_minutes
@@ -34,10 +34,15 @@ def get_active_queue_bookings_for_scope(centre_id: int, slot_date: date) -> list
     """Retrieve active queue bookings for a given centre and date ordered by token number integer."""
     active_bookings = (
         Booking.query.join(Slot)
+        .outerjoin(Procurement)
         .filter(
             Slot.centre_id == centre_id,
             Slot.slot_date == slot_date,
-            Booking.status.in_(BookingStatus.active_statuses)
+            Booking.status.in_(BookingStatus.active_statuses),
+            db.or_(
+                Procurement.id == None,
+                Procurement.procurement_status.notin_([ProcurementStatus.COMPLETED, ProcurementStatus.REJECTED])
+            )
         )
         .all()
     )
@@ -82,12 +87,14 @@ def get_booking_queue_status(booking_id: int, user_id: int | None = None, is_sta
     active_delays = get_active_delays_for_scope(centre.id, slot.slot_date, slot.id)
     active_delay_minutes = sum(d.delay_minutes for d in active_delays)
 
-    # Inactive booking check (CANCELLED, COMPLETED, NO_SHOW)
-    if booking.status not in BookingStatus.active_statuses:
+    # Inactive booking check (CANCELLED, COMPLETED, NO_SHOW or Procurement COMPLETED/REJECTED)
+    procurement_status = booking.procurement.procurement_status if booking.procurement else ProcurementStatus.PENDING
+    if booking.status not in BookingStatus.active_statuses or procurement_status in (ProcurementStatus.COMPLETED, ProcurementStatus.REJECTED):
         return {
             "booking_id": booking.id,
             "token_number": booking.token_number,
             "status": booking.status,
+            "procurement_status": procurement_status,
             "queue_position": None,
             "farmers_ahead": 0,
             "base_estimated_wait": 0,
@@ -136,6 +143,7 @@ def get_booking_queue_status(booking_id: int, user_id: int | None = None, is_sta
         "booking_id": booking.id,
         "token_number": booking.token_number,
         "status": booking.status,
+        "procurement_status": procurement_status,
         "queue_position": queue_position,
         "farmers_ahead": farmers_ahead,
         "base_estimated_wait": base_estimated_wait,
@@ -196,10 +204,14 @@ def get_centre_queue(centre_id: int, target_date: date | None = None) -> dict | 
         b_delays = get_active_delays_for_scope(centre.id, target_date, slot_id)
         b_delay_mins = sum(d.delay_minutes for d in b_delays)
         adjusted_wait = base_wait + b_delay_mins
+        proc_status = b.procurement.procurement_status if b.procurement else ProcurementStatus.PENDING
+        farmer_name = b.farmer.name if b.farmer else "Farmer"
 
         queue_entries.append({
             "booking_id": b.id,
             "token_number": b.token_number,
+            "farmer_id": b.farmer_id,
+            "farmer_name": farmer_name,
             "queue_position": idx + 1,
             "farmers_ahead": farmers_ahead,
             "base_estimated_wait": base_wait,
@@ -207,6 +219,7 @@ def get_centre_queue(centre_id: int, target_date: date | None = None) -> dict | 
             "adjusted_estimated_wait": adjusted_wait,
             "estimated_wait_minutes": adjusted_wait,
             "status": b.status,
+            "procurement_status": proc_status,
             "crop": b.slot.crop.name if b.slot and b.slot.crop else None,
             "slot_time": f"{format_time_string(b.slot.start_time)} - {format_time_string(b.slot.end_time)}" if b.slot else None,
         })
