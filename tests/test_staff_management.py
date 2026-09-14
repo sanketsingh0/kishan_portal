@@ -451,6 +451,29 @@ class TestStaffDashboard:
         assert "KisanProcure Staff" in html
         assert "auth.js" in html
 
+    def test_staff_dashboard_queue_date_selector_and_response_keys(self, client):
+        """Dashboard sends an explicit ?date= queue request and uses actual API response keys."""
+        resp = client.get("/staff/dashboard")
+        assert resp.status_code == 200
+        html = resp.get_data(as_text=True)
+
+        # Procurement date selector defaults to the India date and reloads on change
+        assert 'id="queueDate"' in html
+        assert "Asia/Kolkata" in html
+        assert '?date=${dateParam}' in html
+        assert 'addEventListener("change"' in html
+
+        # Dashboard uses the real /api/queue/centre response fields
+        assert "data.total_waiting" in html
+        assert "data.average_processing_time" in html
+        assert "data.opening_time" in html
+        assert "data.closing_time" in html
+        assert "data.daily_capacity" in html
+
+        # Legacy mismatched response keys are gone
+        assert "active_queue_count" not in html
+        assert "average_processing_minutes" not in html
+
     def test_assigned_staff_dashboard_loads_template(self, client, staff_a):
         """Authenticated STAFF access to dashboard template returns 200 OK."""
         resp = make_auth_call(client, "GET", "/staff/dashboard", "staff-a-sub")

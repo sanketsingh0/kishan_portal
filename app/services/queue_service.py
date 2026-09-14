@@ -228,6 +228,10 @@ def get_centre_queue(centre_id: int, target_date: date | None = None) -> dict | 
         "centre_id": centre.id,
         "centre_name": centre.name,
         "date": format_date_string(target_date),
+        # Real centre operating info needed by the staff dashboard stat cards
+        "opening_time": format_time_string(centre.opening_time),
+        "closing_time": format_time_string(centre.closing_time),
+        "daily_capacity": centre.daily_capacity,
         "average_processing_time": avg_minutes,
         "active_delay_minutes": total_active_delay_minutes,
         "total_waiting": len(queue_entries),

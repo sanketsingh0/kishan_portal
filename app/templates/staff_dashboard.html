@@ -159,8 +159,12 @@
       <!-- Queue Table -->
       <div class="card-custom p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
-          <h5 class="fw-bold mb-0"><i class="fa-solid fa-list-ol me-2 text-success"></i>Today's Procurement Queue</h5>
-          <button class="btn btn-sm btn-outline-success" onclick="loadCentreQueue()">Refresh</button>
+          <h5 class="fw-bold mb-0"><i class="fa-solid fa-list-ol me-2 text-success"></i>Procurement Queue</h5>
+          <div class="d-flex align-items-center gap-2">
+            <label for="queueDate" class="form-label fw-semibold mb-0 small text-muted"><i class="fa-solid fa-calendar-days me-1"></i>Date</label>
+            <input type="date" class="form-control form-control-sm" id="queueDate" aria-label="Select procurement date" style="width: 170px;">
+            <button class="btn btn-sm btn-outline-success" onclick="loadCentreQueue()">Refresh</button>
+          </div>
         </div>
         <div class="table-responsive">
           <table class="table table-hover align-middle">
@@ -301,6 +305,20 @@
   <script>
     let currentStaffProfile = null;
     let currentCentreId = null;
+    let selectedQueueDate = null;
+
+    function getAsiaKolkataDateString() {
+      // Current date in India (Asia/Kolkata) as a YYYY-MM-DD string.
+      const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: "Asia/Kolkata",
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+      }).formatToParts(new Date());
+      const p = {};
+      for (const part of parts) p[part.type] = part.value;
+      return `${p.year}-${p.month}-${p.day}`;
+    }
 
     function hideAlert() {
       const box = document.getElementById("staffAlertBox");
@@ -364,6 +382,10 @@
         document.getElementById("heroCentreLocation").innerText = profile.centre_location || "Location N/A";
         document.getElementById("heroCentreId").innerText = currentCentreId;
 
+        const dateInput = document.getElementById("queueDate");
+        selectedQueueDate = dateInput.value || getAsiaKolkataDateString();
+        dateInput.value = selectedQueueDate;
+
         loadCentreQueue();
       } catch (err) {
         console.error("Initialization error:", err);
@@ -379,7 +401,8 @@
       tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading queue...</td></tr>`;
 
       try {
-        const res = await window.KP.authFetch(`/api/queue/centre/${currentCentreId}`);
+        const dateParam = selectedQueueDate || getAsiaKolkataDateString();
+        const res = await window.KP.authFetch(`/api/queue/centre/${currentCentreId}?date=${dateParam}`);
         const data = await res.json();
 
         if (!res.ok) {
@@ -388,14 +411,14 @@
           return;
         }
 
-        document.getElementById("statOperatingHours").innerText = (data.opening_time || "Any") + " – " + (data.closing_time || "Any");
-        document.getElementById("statDailyCapacity").innerText = data.daily_capacity || "--";
-        document.getElementById("statAvgProcessing").innerText = (data.average_processing_minutes || "--") + " min";
-        document.getElementById("statActiveQueueCount").innerText = data.active_queue_count || 0;
+        document.getElementById("statOperatingHours").innerText = [data.opening_time, data.closing_time].filter(Boolean).join(" – ") || "Any – Any";
+        document.getElementById("statDailyCapacity").innerText = data.daily_capacity ?? "--";
+        document.getElementById("statAvgProcessing").innerText = (data.average_processing_time ?? "--") + " min";
+        document.getElementById("statActiveQueueCount").innerText = data.total_waiting ?? 0;
 
         const queue = data.queue || [];
         if (queue.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No active bookings in queue today.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No active bookings in queue for the selected date.</td></tr>`;
           return;
         }
 
@@ -578,7 +601,7 @@
         showAlert("No centre assigned to record delay.", "warning");
         return;
       }
-      document.getElementById("delayDate").value = new Date().toISOString().split("T")[0];
+      document.getElementById("delayDate").value = selectedQueueDate || getAsiaKolkataDateString();
       document.getElementById("delayMinutes").value = 30;
       document.getElementById("delayReason").value = "";
       document.getElementById("delayModalAlert").classList.add("d-none");
@@ -622,6 +645,11 @@
         alertEl.innerText = "Network error recording delay.";
         alertEl.classList.remove("d-none");
       }
+    });
+
+    document.getElementById("queueDate").addEventListener("change", function () {
+      selectedQueueDate = this.value;
+      loadCentreQueue();
     });
 
     document.addEventListener("DOMContentLoaded", () => {

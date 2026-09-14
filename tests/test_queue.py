@@ -16,6 +16,8 @@ from app.models import (
     BookingStatus,
     Farmer,
     Staff,
+    Procurement,
+    ProcurementStatus,
 )
 
 
@@ -368,3 +370,230 @@ class TestQueueManagement:
             q_data = r_staff.get_json()
             assert q_data["centre_id"] == c_a_id
             assert q_data["total_waiting"] == 2
+
+class TestStaffQueueDateVisibility:
+    """Regression tests for the Staff queue visibility bug.
+
+    Mirrors the verified production scenario: staff03 assigned to centre 7 and
+    booking 27 (token K-0001, CONFIRMED, farmer 5) on slot 24 dated 2026-09-15.
+    The dashboard must request /api/queue/centre/<id>?date=YYYY-MM-DD explicitly,
+    otherwise queue_service defaults to date.today() and hides the booking.
+    """
+
+    @pytest.fixture
+    def staff_queue_date_scenario(self, app):
+        """Create the production bug scenario: staff03 at centre 7 + booking 27."""
+        with app.app_context():
+            u_staff = User(supabase_user_id="staff03", role=UserRole.STAFF, is_active=True)
+            u_farmer = User(supabase_user_id="farmer05", role=UserRole.FARMER, is_active=True)
+            db.session.add_all([u_staff, u_farmer])
+            db.session.flush()
+
+            centre = Centre(
+                id=7,
+                name="Centre 7 Procurement Hub",
+                location="Karnal",
+                opening_time=time(9, 0),
+                closing_time=time(17, 0),
+                daily_capacity=100,
+                average_processing_minutes=15,
+                is_active=True,
+            )
+            staff = Staff(user_id=u_staff.id, centre_id=7, name="Staff 03", phone="9111111103")
+            farmer = Farmer(id=5, user_id=u_farmer.id, name="Farmer 05", phone="9000000005")
+            crop = Crop(name="Paddy", is_active=True)
+            db.session.add_all([centre, staff, farmer, crop])
+            db.session.flush()
+
+            slot = Slot(
+                id=24,
+                centre_id=7,
+                crop_id=crop.id,
+                slot_date=date(2026, 9, 15),
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                capacity=10,
+                status=SlotStatus.OPEN,
+            )
+            db.session.add(slot)
+            db.session.flush()
+
+            booking = Booking(
+                id=27,
+                farmer_id=5,
+                slot_id=24,
+                token_number="K-0001",
+                status=BookingStatus.CONFIRMED,
+            )
+            db.session.add(booking)
+            db.session.commit()
+
+            centre_a_id = centre.id
+            slot_a_id = slot.id
+            booking_a1_id = booking.id
+            crop_id = crop.id
+
+        return {
+            "staff_sub": "staff03",
+            "centre_a_id": centre_a_id,
+            "centre_b_id": 8,
+            "slot_a_id": slot_a_id,
+            "booking_a1_id": booking_a1_id,
+            "crop_id": crop_id,
+            "date_str": "2026-09-15",
+        }
+
+    def _add_farmer_with_booking(self, app, sub, phone, token, status, slot_id=24,
+                                 procurement_status=None, booking_date=date(2026, 9, 15)):
+        """Create a farmer + booking (optionally with a procurement record) and return the booking id."""
+        with app.app_context():
+            u = User(supabase_user_id=sub, role=UserRole.FARMER, is_active=True)
+            db.session.add(u)
+            db.session.flush()
+            f = Farmer(user_id=u.id, name=f"Farmer {sub}", phone=phone)
+            db.session.add(f)
+            db.session.flush()
+            b = Booking(farmer_id=f.id, slot_id=slot_id, token_number=token, status=status, booking_date=booking_date)
+            db.session.add(b)
+            db.session.flush()
+            if procurement_status:
+                db.session.add(Procurement(booking_id=b.id, procurement_status=procurement_status))
+            db.session.commit()
+            return b.id
+
+    def staff_queue_call(self, client, sub_id, url):
+        """Call a staff-protected endpoint with a mocked Supabase token."""
+        with patch("app.auth.decorators.verify_token") as mock_vt:
+            mock_user = MagicMock()
+            mock_user.id = sub_id
+            mock_user.email = f"{sub_id}@example.com"
+            mock_vt.return_value = mock_user
+            return client.get(url, headers=auth_header())
+
+    def test_staff03_sees_booking_27_at_centre_7_on_2026_09_15(self, client, staff_queue_date_scenario):
+        """staff03 must see booking 27 for centre 7 on 2026-09-15 when the date is sent explicitly."""
+        r = self.staff_queue_call(client, "staff03", "/api/queue/centre/7?date=2026-09-15")
+        assert r.status_code == 200
+        data = r.get_json()
+        assert data["centre_id"] == 7
+        assert data["date"] == "2026-09-15"
+
+        queue_ids = [q["booking_id"] for q in data["queue"]]
+        assert staff_queue_date_scenario["booking_a1_id"] in queue_ids
+        entry = next(q for q in data["queue"] if q["booking_id"] == staff_queue_date_scenario["booking_a1_id"])
+        assert entry["token_number"] == "K-0001"
+        assert entry["queue_position"] == 1
+        assert entry["status"] == BookingStatus.CONFIRMED
+
+        # Response-key contract relied on by the staff dashboard stat cards
+        assert data["total_waiting"] == 1
+        assert data["opening_time"] == "09:00"
+        assert data["closing_time"] == "17:00"
+        assert data["daily_capacity"] == 100
+        assert data["average_processing_time"] == 15
+
+    def test_without_date_param_defaults_to_server_today(self, client, staff_queue_date_scenario):
+        """Root-cause regression: omitting ?date hides 2026-09-15 bookings when server date differs."""
+        with patch("app.services.queue_service.date") as mock_date:
+            mock_date.today.return_value = date(2026, 9, 14)
+            r = self.staff_queue_call(client, "staff03", "/api/queue/centre/7")
+            assert r.status_code == 200
+            data = r.get_json()
+            assert data["date"] == "2026-09-14"
+            assert [q["booking_id"] for q in data["queue"]] == []
+
+    def test_staff03_cannot_access_another_centre(self, client, staff_queue_date_scenario):
+        """staff03 (centre 7) is denied access to another centre, with or without a date param."""
+        r = self.staff_queue_call(client, "staff03", "/api/queue/centre/8?date=2026-09-15")
+        assert r.status_code == 403
+        assert "Access denied" in r.get_json()["message"]
+
+        r_no_date = self.staff_queue_call(client, "staff03", "/api/queue/centre/8")
+        assert r_no_date.status_code == 403
+
+    def test_selecting_another_date_changes_displayed_queue(self, client, app, staff_queue_date_scenario):
+        """The displayed queue must change when the selected procurement date changes."""
+        with app.app_context():
+            slot_next = Slot(
+                centre_id=7,
+                crop_id=staff_queue_date_scenario["crop_id"],
+                slot_date=date(2026, 9, 16),
+                start_time=time(9, 0),
+                end_time=time(10, 0),
+                capacity=10,
+                status=SlotStatus.OPEN,
+            )
+            db.session.add(slot_next)
+            db.session.commit()
+            slot_next_id = slot_next.id
+
+        b_next_id = self._add_farmer_with_booking(
+            app, "farmer06", "9000000006", "K-0002", BookingStatus.CONFIRMED, slot_id=slot_next_id
+        )
+
+        r15 = self.staff_queue_call(client, "staff03", "/api/queue/centre/7?date=2026-09-15")
+        ids_15 = [q["booking_id"] for q in r15.get_json()["queue"]]
+        assert staff_queue_date_scenario["booking_a1_id"] in ids_15
+        assert b_next_id not in ids_15
+
+        r16 = self.staff_queue_call(client, "staff03", "/api/queue/centre/7?date=2026-09-16")
+        ids_16 = [q["booking_id"] for q in r16.get_json()["queue"]]
+        assert b_next_id in ids_16
+        assert staff_queue_date_scenario["booking_a1_id"] not in ids_16
+
+    def test_pending_and_confirmed_bookings_appear(self, client, app, staff_queue_date_scenario):
+        """PENDING and CONFIRMED active bookings are both visible to staff."""
+        pending_id = self._add_farmer_with_booking(
+            app, "farmer06", "9000000006", "K-0002", BookingStatus.PENDING
+        )
+        r = self.staff_queue_call(client, "staff03", "/api/queue/centre/7?date=2026-09-15")
+        assert r.status_code == 200
+        data = r.get_json()
+        queue_ids = [q["booking_id"] for q in data["queue"]]
+        assert staff_queue_date_scenario["booking_a1_id"] in queue_ids
+        assert pending_id in queue_ids
+        assert data["total_waiting"] == 2
+
+        statuses = {q["booking_id"]: q["status"] for q in data["queue"]}
+        assert statuses[pending_id] == BookingStatus.PENDING
+        assert statuses[staff_queue_date_scenario["booking_a1_id"]] == BookingStatus.CONFIRMED
+
+    def test_cancelled_completed_rejected_bookings_not_in_queue(self, client, app, staff_queue_date_scenario):
+        """CANCELLED/COMPLETED booking statuses and COMPLETED/REJECTED procurements are excluded."""
+        cancelled_id = self._add_farmer_with_booking(
+            app, "farmer06", "9000000006", "K-0002", BookingStatus.CANCELLED
+        )
+        completed_booking_id = self._add_farmer_with_booking(
+            app, "farmer07", "9000000007", "K-0003", BookingStatus.COMPLETED
+        )
+        proc_completed_id = self._add_farmer_with_booking(
+            app, "farmer08", "9000000008", "K-0004", BookingStatus.CONFIRMED,
+            procurement_status=ProcurementStatus.COMPLETED,
+        )
+        proc_rejected_id = self._add_farmer_with_booking(
+            app, "farmer09", "9000000009", "K-0005", BookingStatus.CONFIRMED,
+            procurement_status=ProcurementStatus.REJECTED,
+        )
+
+        r = self.staff_queue_call(client, "staff03", "/api/queue/centre/7?date=2026-09-15")
+        assert r.status_code == 200
+        data = r.get_json()
+        queue_ids = [q["booking_id"] for q in data["queue"]]
+
+        assert staff_queue_date_scenario["booking_a1_id"] in queue_ids
+        assert cancelled_id not in queue_ids
+        assert completed_booking_id not in queue_ids
+        assert proc_completed_id not in queue_ids
+        assert proc_rejected_id not in queue_ids
+        assert data["total_waiting"] == 1
+
+    def test_admin_can_access_any_centre_with_staff_date_filter(self, client, app, staff_queue_date_scenario):
+        """ADMIN access to all centres is preserved (centre isolation bypassed)."""
+        with app.app_context():
+            u_admin = User(supabase_user_id="admin-sub-7", role=UserRole.ADMIN, is_active=True)
+            db.session.add(u_admin)
+            db.session.commit()
+
+        r = self.staff_queue_call(client, "admin-sub-7", "/api/queue/centre/7?date=2026-09-15")
+        assert r.status_code == 200
+        assert staff_queue_date_scenario["booking_a1_id"] in [q["booking_id"] for q in r.get_json()["queue"]]
