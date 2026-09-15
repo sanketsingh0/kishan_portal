@@ -25,6 +25,26 @@ def test_landing_page_auth_tabs(client):
     assert "FARMER" in body and "STAFF" in body and "ADMIN" in body
 
 
+def test_landing_role_tab_switching_syncs_with_markup(client):
+    """Role-tab switching must move the active pill and visible login panel on the
+    first click. The JS selector must match the real tab buttons (data-role), not
+    the dead '.auth-tab' class."""
+    resp = client.get("/")
+    body = resp.data.decode("utf-8")
+    # Tab buttons live inside the .ats tablist and expose data-role.
+    assert body.count('class="ats" role="tablist"') == 1
+    for r in ("farmer", "staff", "admin"):
+        assert 'data-role="%s"' % r in body
+    with open(LANDING_JS, "r", encoding="utf-8") as f:
+        js = f.read()
+    # The switcher must query the buttons via the hook the markup actually uses.
+    assert ".ats [data-role]" in js or "[data-role]" in js
+    assert ".auth-tab" not in js
+    # The visible panel must derive from the same single role value.
+    assert "currentRole" in js
+    assert "classList.toggle('d-none',role!=='farmer')" in js
+
+
 def test_landing_page_uses_existing_login(client):
     resp = client.get("/")
     assert "landing.js" in resp.data.decode("utf-8")

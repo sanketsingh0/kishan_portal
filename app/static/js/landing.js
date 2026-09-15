@@ -2,7 +2,7 @@
 (function(){'use strict';
 var currentRole='farmer';
 window.switchAuthTab=function(role){currentRole=role;
-var tabs=document.querySelectorAll('.auth-tab');
+var tabs=document.querySelectorAll('.ats [data-role]');
 for(var i=0;i<tabs.length;i++){if(tabs[i].getAttribute('data-role')===role){tabs[i].classList.add('active');tabs[i].setAttribute('aria-selected','true')}else{tabs[i].classList.remove('active');tabs[i].setAttribute('aria-selected','false')}}
 document.getElementById('aff').classList.toggle('d-none',role!=='farmer');
 document.getElementById('asf').classList.toggle('d-none',role!=='staff');
