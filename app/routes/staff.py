@@ -17,6 +17,8 @@ staff_bp = Blueprint("staff", __name__, url_prefix="/staff")
 
 
 @staff_bp.get("/dashboard")
+@login_required
+@role_required(UserRole.STAFF)
 def staff_dashboard():
     """Render the staff dashboard HTML template for browser navigation.
 

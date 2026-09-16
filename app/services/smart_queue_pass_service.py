@@ -525,3 +525,112 @@ def record_verification_failure(
         )
     except Exception as exc:
         logger.warning("Failed to audit rejected Smart Queue Pass verification: %s", exc)
+
+
+def generate_qr_code_base64(secure_pass_id: str) -> str:
+    """Generate a QR code image as a base64-encoded PNG string.
+
+    The QR code encodes ONLY the secure_pass_id (kp_pass_<random>).
+    It contains NO farmer information, phone, bank details, JWT, or
+    any other sensitive data.
+
+    Args:
+        secure_pass_id: The cryptographically secure pass identifier.
+
+    Returns:
+        Base64-encoded PNG image string suitable for embedding in HTML.
+    """
+    import base64
+    import io
+
+    import qrcode
+
+    # Create QR code with appropriate error correction and size
+    qr = qrcode.QRCode(
+        version=None,  # Auto-determine version based on data length
+        error_correction=qrcode.constants.ERROR_CORRECT_M,
+        box_size=10,
+        border=4,
+    )
+    qr.add_data(secure_pass_id)
+    qr.make(fit=True)
+
+    # Create the QR code image
+    img = qr.make_image(fill_color="black", back_color="white")
+
+    # Save to bytes buffer
+    buffer = io.BytesIO()
+    img.save(buffer, format="PNG")
+    buffer.seek(0)
+
+    # Encode as base64
+    img_bytes = buffer.getvalue()
+    base64_string = base64.b64encode(img_bytes).decode("utf-8")
+
+    return base64_string
+
+
+def get_pass_for_display(booking_id: int) -> dict | None:
+    """Get a Smart Queue Pass ready for display to the farmer.
+
+    This gathers all the information needed to render the pass UI:
+    - Pass details (secure_pass_id, status)
+    - Booking details (token, date, status)
+    - Farmer details (name only - no phone)
+    - Centre details (name, location)
+    - Crop details (name only)
+    - Slot details (date, start time, end time)
+    - QR code as base64 (for rendering)
+
+    This function does NOT expose sensitive data like phone, bank details,
+    IFSC, passwords, or JWTs.
+
+    Args:
+        booking_id: The booking ID to look up.
+
+    Returns:
+        Dictionary with pass display data, or None if no pass exists.
+    """
+    from app.services.farmer_service import get_farmer_by_user_id
+    from app.services.slot_service import format_date_string, format_time_string
+
+    pass_row = get_pass_by_booking_id(booking_id)
+    if pass_row is None:
+        return None
+
+    booking = pass_row.booking
+    slot = booking.slot if booking else None
+
+    # Build the display data
+    display_data = {
+        "pass_id": pass_row.secure_pass_id,
+        "pass_status": pass_row.status,
+        "booking_id": booking.id if booking else None,
+        "booking_status": booking.status if booking else None,
+        "token_number": booking.token_number if booking else None,
+        "booking_date": format_date_string(booking.booking_date) if booking and booking.booking_date else None,
+    }
+
+    # Farmer name only (no phone)
+    if booking and booking.farmer:
+        display_data["farmer_name"] = booking.farmer.name
+
+    # Centre info
+    if slot and slot.centre:
+        display_data["centre_name"] = slot.centre.name
+        display_data["centre_location"] = slot.centre.location
+
+    # Crop info
+    if slot and slot.crop:
+        display_data["crop_name"] = slot.crop.name
+
+    # Slot times
+    if slot:
+        display_data["slot_date"] = format_date_string(slot.slot_date)
+        display_data["start_time"] = format_time_string(slot.start_time)
+        display_data["end_time"] = format_time_string(slot.end_time)
+
+    # Generate QR code from secure_pass_id only
+    display_data["qr_code_base64"] = generate_qr_code_base64(pass_row.secure_pass_id)
+
+    return display_data

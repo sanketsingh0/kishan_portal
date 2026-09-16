@@ -9,7 +9,7 @@ Stage 1 is backend-only: no QR image generation, PDF export or scanner UI.
 The secure pass identifier is designed to be used as a QR payload in Stage 2.
 """
 
-from flask import Blueprint, jsonify, request, g
+from flask import Blueprint, jsonify, request, g, render_template
 
 from app.auth.decorators import (
     login_required,
@@ -30,6 +30,7 @@ from app.services.smart_queue_pass_service import (
     get_or_create_pass_for_booking,
     get_pass_context,
     get_pass_for_centre,
+    get_pass_for_display,
     record_verification_failure,
     verify_pass,
 )
@@ -158,6 +159,86 @@ def get_my_smart_queue_pass(booking_id: int):
         }), 409
 
     return jsonify({"smart_queue_pass": _format_queue_pass(pass_row)}), 200
+
+
+@queue_pass_bp.route("/my/<int:booking_id>/display", methods=["GET"])
+@login_required
+@role_required(UserRole.FARMER)
+def get_queue_pass_for_display(booking_id: int):
+    """Get a Smart Queue Pass ready for display to the farmer (FARMER only).
+
+    This endpoint returns all the data needed to render the pass UI,
+    including the QR code as a base64-encoded PNG image.
+
+    The QR code encodes ONLY the secure_pass_id (kp_pass_<random>).
+    It contains NO farmer information, phone, bank details, JWT, or
+    any other sensitive data.
+
+    Returns:
+        200 OK: { pass_data: { ... } } with QR code and pass details
+        403 Forbidden: non-farmer access
+        404 Not Found: no pass for this booking
+        409 Conflict: pass not available (e.g., booking not confirmed)
+    """
+    from app.services.smart_queue_pass_service import get_pass_for_display
+
+    # Verify the booking belongs to the authenticated farmer
+    booking = db.session.get(Booking, booking_id)
+    if not booking:
+        return jsonify({
+            "error": "Not Found",
+            "message": "No Smart Queue Pass found for this booking.",
+            "code": "NOT_FOUND",
+        }), 404
+
+    farmer = get_farmer_by_user_id(g.current_user.id)
+    if not farmer or booking.farmer_id != farmer.id:
+        # Don't disclose that the booking exists but belongs to another farmer
+        return jsonify({
+            "error": "Not Found",
+            "message": "No Smart Queue Pass found for this booking.",
+            "code": "NOT_FOUND",
+        }), 404
+
+    pass_data = get_pass_for_display(booking_id)
+    if pass_data is None:
+        return jsonify({
+            "error": "Not Found",
+            "message": "No Smart Queue Pass found for this booking.",
+            "code": "NOT_FOUND",
+        }), 404
+
+    return jsonify({"pass_data": pass_data}), 200
+
+
+@queue_pass_bp.route("/my/<int:booking_id>/view", methods=["GET"])
+@login_required
+@role_required(UserRole.FARMER)
+def view_queue_pass(booking_id: int):
+    """Render the Smart Queue Pass view page for the farmer (FARMER only).
+
+    This page displays the QR code and pass details in a mobile-friendly,
+    printable format.
+
+    Returns:
+        200 OK: Rendered queue_pass.html template with pass data
+        403 Forbidden: non-farmer access
+        404 Not Found: no pass for this booking
+    """
+    from app.services.smart_queue_pass_service import get_pass_for_display
+    import json
+
+    pass_data = get_pass_for_display(booking_id)
+    if pass_data is None:
+        return render_template(
+            "queue_pass.html",
+            pass_data_json=json.dumps({"error": "No pass found"})
+        )
+
+    return render_template(
+        "queue_pass.html",
+        pass_data_json=json.dumps(pass_data)
+    )
 
 
 @queue_pass_bp.route("/lookup/<string:pass_id>", methods=["GET"])

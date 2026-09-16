@@ -156,6 +156,34 @@
         </div>
       </div>
 
+      <!-- Smart Queue Pass Scanner -->
+      <div class="card-custom p-4 mb-4" id="scannerSection">
+        <div class="d-flex justify-content-between align-items-center mb-3">
+          <h5 class="fw-bold mb-0"><i class="fa-solid fa-qrcode me-2 text-primary"></i>Smart Queue Pass Scanner</h5>
+          <button class="btn btn-sm btn-outline-primary" id="scanBtn" onclick="startScanner()">
+            <i class="fa-solid fa-camera me-1"></i>Scan Queue Pass
+          </button>
+        </div>
+        <div class="alert alert-info py-2">
+          <small class="text-info">
+            <i class="fa-solid fa-circle-info me-1"></i>
+            Scan a farmer's Smart Queue Pass QR code to verify mandi entry.
+            <br><small>Camera access required. Scanner stops after successful scan.</small>
+          </small>
+        </div>
+        <div id="scannerContainer" class="d-none">
+          <div class="border rounded-3 p-3 bg-light text-center" style="min-height: 300px; display: flex; align-items: center; justify-content: center;">
+            <div id="scannerViewport" class="rounded" style="max-width: 100%;"></div>
+          </div>
+          <div class="mt-3 text-center">
+            <button class="btn btn-sm btn-outline-danger" id="stopScanBtn" onclick="stopScanner()">
+              <i class="fa-solid fa-stop me-1"></i>Stop Scanning
+            </button>
+          </div>
+        </div>
+        <div id="scanResult" class="d-none mt-3"></div>
+      </div>
+
       <!-- Queue Table -->
       <div class="card-custom p-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
@@ -651,6 +679,192 @@
       selectedQueueDate = this.value;
       loadCentreQueue();
     });
+
+    // Smart Queue Pass Scanner Functions
+    let html5QrcodeScanner = null;
+    let isScanning = false;
+
+    async function startScanner() {
+      if (isScanning) return;
+
+      const scanBtn = document.getElementById('scanBtn');
+      const scannerContainer = document.getElementById('scannerContainer');
+      const scanResult = document.getElementById('scanResult');
+
+      scannerContainer.classList.remove('d-none');
+      scanResult.classList.add('d-none');
+      scanResult.innerHTML = '';
+      scanBtn.classList.add('d-none');
+
+      try {
+        if (typeof Html5Qrcode !== 'undefined') {
+          html5QrcodeScanner = new Html5Qrcode("scannerViewport");
+          await html5QrcodeScanner.start(
+            { facingMode: "environment" },
+            { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }
+          );
+          isScanning = true;
+          showScanResult('info', 'Camera started. Point QR code at the camera...', 'fa-camera');
+        } else {
+          const script = document.createElement('script');
+          script.src = 'https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';
+          script.onload = async () => {
+            html5QrcodeScanner = new Html5Qrcode("scannerViewport");
+            await html5QrcodeScanner.start(
+              { facingMode: "environment" },
+              { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 }
+            );
+            isScanning = true;
+            showScanResult('info', 'Camera started. Point QR code at the camera...', 'fa-camera');
+          };
+          script.onerror = () => {
+            showScanResult('danger', 'Failed to load camera library.', 'fa-triangle-exclamation');
+            scanBtn.classList.remove('d-none');
+            scannerContainer.classList.add('d-none');
+          };
+          document.head.appendChild(script);
+        }
+
+        html5QrcodeScanner.onScanSuccess = async (decodedText) => {
+          await stopScanner();
+          await verifyQueuePass(decodedText);
+        };
+
+      } catch (err) {
+        console.error("Scanner error:", err);
+        showScanResult('danger', 'Failed to start camera.', 'fa-camera');
+        scanBtn.classList.remove('d-none');
+        scannerContainer.classList.add('d-none');
+      }
+    }
+
+    async function stopScanner() {
+      if (html5QrcodeScanner && isScanning) {
+        try {
+          await html5QrcodeScanner.stop();
+        } catch (err) {
+          console.error("Error stopping scanner:", err);
+        }
+        html5QrcodeScanner.clear();
+        html5QrcodeScanner = null;
+      }
+      isScanning = false;
+      document.getElementById('scanBtn').classList.remove('d-none');
+    }
+
+    function showScanResult(type, message, icon) {
+      const scanResult = document.getElementById('scanResult');
+      const alertColors = {
+        success: 'alert-success',
+        danger: 'alert-danger',
+        warning: 'alert-warning',
+        info: 'alert-info'
+      };
+      scanResult.innerHTML = `
+        <div class="alert ${alertColors[type] || 'alert-info'} py-2">
+          <i class="fa-solid ${icon || 'fa-circle-info'} me-2"></i>
+          ${message}
+        </div>
+      `;
+      scanResult.classList.remove('d-none');
+      scanResult.className = 'mt-3';
+    }
+
+    async function verifyQueuePass(passId) {
+      const scanResult = document.getElementById('scanResult');
+      try {
+        const res = await window.KP.authFetch('/api/queue-pass/verify', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ pass_id: passId })
+        });
+        const data = await res.json();
+
+        if (!res.ok) {
+          let message = 'Unable to Verify Pass. Please Try Again.';
+          if (res.status === 404) {
+            message = 'Invalid Queue Pass';
+          } else if (res.status === 409) {
+            if (data.smart_queue_pass) {
+              if (data.smart_queue_pass.pass_status === 'VERIFIED') {
+                message = 'Pass Already Verified';
+              } else if (data.smart_queue_pass.pass_status === 'CANCELLED') {
+                message = 'Pass Cancelled';
+              } else {
+                message = data.message || 'Pass Not Eligible for Entry';
+              }
+            } else {
+              message = data.message || 'Pass Not Eligible for Entry';
+            }
+          } else if (res.status === 403) {
+            message = 'Pass Belongs to Another Centre';
+          }
+          showScanResult('danger', message, 'fa-circle-xmark');
+          return;
+        }
+
+        const passData = data.smart_queue_pass;
+        const verifiedAt = passData.verified_at ? new Date(passData.verified_at).toLocaleString() : 'N/A';
+        let resultHtml = `
+          <div class="card border-success mb-3">
+            <div class="card-header bg-success text-white fw-bold">
+              <i class="fa-solid fa-circle-check me-2"></i>ENTRY VERIFIED
+            </div>
+            <div class="card-body p-3">
+              <div class="row g-2">
+                <div class="col-6">
+                  <small class="text-muted d-block">Farmer</small>
+                  <div class="fw-bold">${passData.farmer?.name || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Token</small>
+                  <div class="fw-bold text-warning">${passData.booking?.token_number || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Booking ID</small>
+                  <div class="fw-bold">#${passData.booking?.id || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Centre</small>
+                  <div class="fw-bold">${passData.centre?.name || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Crop</small>
+                  <div class="fw-bold">${passData.crop?.name || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Date</small>
+                  <div class="fw-bold">${passData.slot?.slot_date || '--'}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Slot Time</small>
+                  <div class="fw-bold">${passData.slot?.start_time || ''} - ${passData.slot?.end_time || ''}</div>
+                </div>
+                <div class="col-6">
+                  <small class="text-muted d-block">Verified At</small>
+                  <div class="fw-bold">${verifiedAt}</div>
+                </div>
+              </div>
+              <div class="mt-3 pt-3 border-top">
+                <span class="badge bg-success fs-6">Status: ${passData.pass_status}</span>
+              </div>
+              <div class="mt-2 small text-muted">
+                <i class="fa-solid fa-circle-info me-1"></i>
+                Verification only confirms mandi entry. Procurement is not started.
+              </div>
+            </div>
+          </div>
+        `;
+        scanResult.innerHTML = resultHtml;
+        scanResult.classList.remove('d-none');
+        scanResult.className = 'mt-3';
+        scanResult.scrollIntoView({ behavior: 'smooth', block: 'center' });
+
+      } catch (err) {
+        console.error("Verification error:", err);
+        showScanResult('danger', 'Unable to Verify Pass. Please Try Again.', 'fa-triangle-exclamation');
+      }
+    }
 
     document.addEventListener("DOMContentLoaded", () => {
       initStaffDashboard();

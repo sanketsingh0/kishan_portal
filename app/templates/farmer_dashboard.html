@@ -638,9 +638,9 @@
                 </div>
                 <div>
                   ${isActive ? `
-                    <button class="btn btn-sm btn-outline-danger" onclick="cancelBookingAction(${b.id})">
+                    <div class="d-flex flex-wrap gap-2"><button class="btn btn-sm btn-outline-danger" onclick="cancelBookingAction(${b.id})">
                       <i class="fa-solid fa-xmark me-1"></i>Cancel Booking
-                    </button>
+                    </button><button class="btn btn-sm btn-kp-primary" onclick="viewQueuePass(${b.id})"><i class="fa-solid fa-qrcode me-1"></i>View Smart Queue Pass</button></div>
                   ` : `
                     <span class="text-muted small"><i class="fa-solid fa-circle-check me-1"></i>${b.status}</span>
                   `}
@@ -926,6 +926,11 @@
         console.error(err);
         showAlert("Network error cancelling booking.", "danger");
       }
+    }
+
+    // View Smart Queue Pass
+    function viewQueuePass(bookingId) {
+      window.open('/api/queue-pass/my/' + bookingId + '/view', '_blank', 'width=400,height=700,menubar=no,toolbar=no,scrollbars=yes');
     }
 
     document.getElementById("logoutBtn").addEventListener("click", function() {
