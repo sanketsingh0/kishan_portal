@@ -182,11 +182,50 @@ KisanProcure uses **Flask-SocketIO** for real-time state synchronization across 
 ### Render Setup
 
 - **Build command**: `pip install -r requirements.txt`
+- **Pre-deploy command (automatic migrations)**: `python -m flask --app run.py db upgrade`
 - **Start command**: `gunicorn -c gunicorn.conf.py run:app`
 - **Python version**: 3.13 (pinned via `.python-version`)
 - **Environment**: set `FLASK_ENV=production` plus the variables documented in the table above (Render auto-provides `$PORT`).
 - **HTTPS & Security**: Require HTTPS for Service Worker and Web Push APIs.
 - **Security Headers**: Automatic `X-Content-Type-Options: nosniff`, `X-Frame-Options: SAMEORIGIN`, `Referrer-Policy: strict-origin-when-cross-origin`, and `Cache-Control: no-store` on API responses.
+
+#### Automatic database migrations (Render pre-deploy command)
+
+Database migrations run **automatically on every deploy**, as a build-pipeline
+step declared in [`render.yaml`](render.yaml):
+
+```
+Build:       pip install -r requirements.txt
+Pre-deploy:  python -m flask --app run.py db upgrade
+Start:       gunicorn -c gunicorn.conf.py run:app
+```
+
+- No Render Shell is required: the pre-deploy command completes before the new
+  instance starts serving traffic, so the app never runs against an unapplied
+  schema.
+- It reads Render's own `DATABASE_URL` environment variable. No credential is
+  hard-coded, and no secret is stored in the repository.
+- **If the migration fails, the deploy fails.** Render cancels the deploy, the
+  application is not started, and the previous healthy version keeps serving.
+  Migration errors are never hidden (`|| true` is never used).
+- The migration only creates the `smart_queue_passes` table and its index. It
+  does not alter existing tables (`farmers`, `bookings`, `slots`, `centres`,
+  `procurements`, `payments`, `users`, `audit_logs`) and it deletes nothing.
+- Nothing is seeded during deployment: `DEMO_SEED_ON_START` stays `false`.
+
+For a service that is **not** managed by a Blueprint, set the same command once
+in the Render Dashboard under **Settings → Build & Deploy → Pre-Deploy Command**:
+
+```
+python -m flask --app run.py db upgrade
+```
+
+Fallback, if a service must run everything through its start command (the `&&`
+guarantees the server only starts when the migration succeeded):
+
+```
+python -m flask --app run.py db upgrade && exec gunicorn -c gunicorn.conf.py run:app
+```
 
 ---
 

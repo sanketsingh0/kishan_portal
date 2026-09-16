@@ -1,0 +1,62 @@
+###############################################################################
+# KisanProcure - Render Blueprint (render.yaml)
+#
+# Purpose: apply pending database migrations automatically as part of every
+# Render deploy, BEFORE the new instance starts serving traffic.
+#
+# Deploy lifecycle:
+#
+#   Build:       pip install -r requirements.txt
+#   Pre-deploy:  python -m flask --app run.py db upgrade   <-- migrations
+#   Start:       gunicorn -c gunicorn.conf.py run:app
+#
+# Failure behaviour: if the pre-deploy command fails, Render cancels the build
+# and the deploy fails. The application is NEVER started against an unapplied
+# schema, and migration errors are never swallowed.
+#
+# Security:
+#   * No credentials are stored in this file. The pre-deploy command is a Flask
+#     CLI invocation, so it reads Render's own DATABASE_URL environment
+#     variable automatically (DATABASE_URL is never hard-coded).
+#   * Entries marked `sync: false` are placeholders only - Render keeps using
+#     the values already configured in the Dashboard.
+#   * DEMO_SEED_ON_START is pinned to "false" (no seeding / reseeding).
+#   * The migration only creates the `smart_queue_passes` table and its index;
+#     it never alters existing tables and never deletes data.
+#
+# Applying this file:
+#   * Service NOT managed by a Blueprint: set the same command once in the
+#     Dashboard under Settings -> Build & Deploy -> Pre-Deploy Command.
+#   * Blueprint-managed service: create a Blueprint from this repository. If
+#     you adopt this file for an already-existing service, also add that
+#     service's current `name`, `region` and `plan` so no configuration drifts.
+###############################################################################
+
+services:
+  - type: web
+    name: kishan-portal # must match the existing Render service name
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # Runs after the build and before the new instance receives traffic.
+    # Uses Render's own DATABASE_URL - no credentials live in this repository.
+    preDeployCommand: python -m flask --app run.py db upgrade
+    # Unchanged production start command.
+    startCommand: gunicorn -c gunicorn.conf.py run:app
+    envVars:
+      - key: FLASK_ENV
+        value: production
+      # Never seed or reseed automatically (default is already off).
+      - key: DEMO_SEED_ON_START
+        value: "false"
+      # No values are stored here; Render prompts for / keeps the existing ones.
+      - key: DATABASE_URL
+        sync: false
+      - key: SECRET_KEY
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_ANON_KEY
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
+        sync: false
