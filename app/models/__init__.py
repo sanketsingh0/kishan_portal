@@ -10,6 +10,7 @@ Models:
     bookings     - farmer slot bookings and procurement tokens
     procurements - procurement status and quantity tracking
     payments     - payment status and reference tracking
+    smart_queue_passes - secure digital mandi entry passes (SIH 26032)
 """
 
 from app.models.common import TimestampMixin, UserRole, utcnow
@@ -20,6 +21,7 @@ from app.models.centre import Centre
 from app.models.crop import Crop
 from app.models.slot import Slot, SlotStatus
 from app.models.booking import Booking, BookingStatus
+from app.models.smart_queue_pass import SmartQueuePass, SmartQueuePassStatus
 from app.models.procurement import Procurement, ProcurementStatus
 from app.models.payment import Payment, PaymentStatus
 from app.models.delay import Delay, DelayStatus
@@ -38,6 +40,8 @@ __all__ = [
     "SlotStatus",
     "Booking",
     "BookingStatus",
+    "SmartQueuePass",
+    "SmartQueuePassStatus",
     "Procurement",
     "ProcurementStatus",
     "Payment",

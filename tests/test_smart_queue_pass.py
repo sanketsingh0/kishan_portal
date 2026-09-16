@@ -1,0 +1,833 @@
+"""Tests for the Smart Queue Pass (SIH 26032 - QR-based digital mandi entry pass).
+
+Stage 1 scope: pass model, secure pass identifier, ACTIVE/VERIFIED/CANCELLED
+lifecycle, booking/cancellation integration, staff centre isolation, verification
+API, audit logging.
+
+Covered:
+A. Pass model can be created.                    N. ACTIVE -> VERIFIED.
+B. booking_id uniqueness.                        O. verified_at recorded.
+C. Secure pass identifier uniqueness.            P. verified_by recorded.
+D. Pass starts ACTIVE.                           Q. verification_centre_id recorded.
+E. Confirmed booking creates one pass.           R. Re-verification -> 409.
+F. Duplicate creation is idempotent.             S. Cancelled pass rejected.
+G. Farmer retrieves own pass.                    T. Completed booking rejected.
+H. Farmer cannot read another farmer's pass.     U. Rejected procurement rejected.
+I. Farmer cannot verify.                         V. Unknown pass -> 404.
+J. Assigned STAFF verifies own centre.           W. Verification does not complete procurement.
+K. STAFF cannot verify another centre (403).     X. Cancellation cancels ACTIVE pass.
+L. Unassigned STAFF -> 403.                      Y. Audit log written.
+M. ADMIN verifies any centre (system-wide).      Z. Cross-centre / role security rules.
+
+All tests run against the isolated in-memory SQLite database from
+tests/conftest.py; no real database, no .env access and no seed scripts.
+"""
+
+import re
+from datetime import date, datetime, time, timedelta, timezone
+from unittest.mock import MagicMock, patch
+
+import pytest
+from sqlalchemy.exc import IntegrityError
+
+from app.extensions import db
+from app.models import (
+    AuditLog,
+    Booking,
+    BookingStatus,
+    Centre,
+    Crop,
+    Farmer,
+    Procurement,
+    ProcurementStatus,
+    Slot,
+    SlotStatus,
+    SmartQueuePass,
+    SmartQueuePassStatus,
+    Staff,
+    User,
+    UserRole,
+)
+from app.services.smart_queue_pass_service import (
+    create_pass_for_booking,
+    generate_secure_pass_id,
+    get_or_create_pass_for_booking,
+)
+
+
+def make_call(client, method, url, sub_id, json_data=None):
+    """Helper to mock Supabase token verification and execute a request."""
+    with patch("app.auth.decorators.verify_token") as mock_vt:
+        mock_user = MagicMock()
+        mock_user.id = sub_id
+        mock_vt.return_value = mock_user
+
+        headers = {"Authorization": "Bearer mock-token"}
+        if method.upper() == "GET":
+            return client.get(url, headers=headers)
+        if method.upper() == "POST":
+            return client.post(url, json=json_data, headers=headers)
+        if method.upper() == "PUT":
+            return client.put(url, json=json_data, headers=headers)
+        if method.upper() == "DELETE":
+            return client.delete(url, headers=headers)
+        raise AssertionError(f"Unsupported method {method}")
+
+
+def pass_snapshot(app, booking_id):
+    """Read the pass row of a booking as plain values (fresh from the database)."""
+    with app.app_context():
+        db.session.expire_all()
+        row = SmartQueuePass.query.filter_by(booking_id=booking_id).first()
+        if row is None:
+            return None
+        return {
+            "id": row.id,
+            "pass_id": row.secure_pass_id,
+            "status": row.status,
+            "verified_at": row.verified_at,
+            "verified_by": row.verified_by,
+            "verification_centre_id": row.verification_centre_id,
+        }
+
+
+def pass_count(app):
+    """Total number of Smart Queue Pass rows."""
+    with app.app_context():
+        db.session.expire_all()
+        return SmartQueuePass.query.count()
+
+
+def booking_status(app, booking_id):
+    with app.app_context():
+        db.session.expire_all()
+        booking = db.session.get(Booking, booking_id)
+        return booking.status if booking else None
+
+
+def audit_entries(app, action):
+    """Audit log entries for one action, as plain dictionaries."""
+    with app.app_context():
+        db.session.expire_all()
+        return [
+            {
+                "user_id": log.user_id,
+                "entity_type": log.entity_type,
+                "entity_id": log.entity_id,
+                "description": log.description,
+                "metadata": log.metadata_json or {},
+            }
+            for log in AuditLog.query.filter_by(action=action).all()
+        ]
+
+
+@pytest.fixture
+def pass_setup(app):
+    """Centre A/B, staff (assigned + unassigned), admin, farmers, slots, bookings.
+
+    Bookings are inserted directly (as demo/seed data is), so the lazy pass
+    creation path is exercised too. ``slot_c`` stays unbooked for the
+    booking-API test.
+    """
+    with app.app_context():
+        db.session.query(AuditLog).delete()
+        db.session.query(SmartQueuePass).delete()
+        db.session.query(Procurement).delete()
+        db.session.query(Booking).delete()
+        db.session.query(Slot).delete()
+        db.session.query(Farmer).delete()
+        db.session.query(Staff).delete()
+        db.session.query(Crop).delete()
+        db.session.query(Centre).delete()
+        db.session.query(User).delete()
+        db.session.commit()
+
+        u_farmer1 = User(supabase_user_id="user-pass-farmer1", role=UserRole.FARMER, is_active=True)
+        u_farmer2 = User(supabase_user_id="user-pass-farmer2", role=UserRole.FARMER, is_active=True)
+        u_staff_a = User(supabase_user_id="user-pass-staff-a", role=UserRole.STAFF, is_active=True)
+        u_staff_b = User(supabase_user_id="user-pass-staff-b", role=UserRole.STAFF, is_active=True)
+        u_staff_none = User(supabase_user_id="user-pass-staff-none", role=UserRole.STAFF, is_active=True)
+        u_admin = User(supabase_user_id="user-pass-admin", role=UserRole.ADMIN, is_active=True)
+        db.session.add_all([u_farmer1, u_farmer2, u_staff_a, u_staff_b, u_staff_none, u_admin])
+        db.session.commit()
+
+        c_a = Centre(name="Pass Test Centre A", location="Ludhiana",
+                     daily_capacity=100, average_processing_minutes=15, is_active=True)
+        c_b = Centre(name="Pass Test Centre B", location="Patiala",
+                     daily_capacity=100, average_processing_minutes=15, is_active=True)
+        crop = Crop(name="Pass Test Wheat", is_active=True)
+        db.session.add_all([c_a, c_b, crop])
+        db.session.commit()
+
+        staff_a = Staff(user_id=u_staff_a.id, name="Pass Staff A", centre_id=c_a.id)
+        staff_b = Staff(user_id=u_staff_b.id, name="Pass Staff B", centre_id=c_b.id)
+        staff_none = Staff(user_id=u_staff_none.id, name="Pass Staff Unassigned", centre_id=None)
+        farmer1 = Farmer(user_id=u_farmer1.id, name="Pass Farmer One", phone="9876500101")
+        farmer2 = Farmer(user_id=u_farmer2.id, name="Pass Farmer Two", phone="9876500102")
+        db.session.add_all([staff_a, staff_b, staff_none, farmer1, farmer2])
+        db.session.commit()
+
+        slot_date = date.today() + timedelta(days=1)
+        slot_a = Slot(centre_id=c_a.id, crop_id=crop.id, slot_date=slot_date,
+                      start_time=time(9, 0), end_time=time(10, 0),
+                      capacity=10, status=SlotStatus.OPEN)
+        slot_b = Slot(centre_id=c_b.id, crop_id=crop.id, slot_date=slot_date,
+                      start_time=time(9, 0), end_time=time(10, 0),
+                      capacity=10, status=SlotStatus.OPEN)
+        slot_c = Slot(centre_id=c_a.id, crop_id=crop.id, slot_date=slot_date,
+                      start_time=time(11, 0), end_time=time(12, 0),
+                      capacity=10, status=SlotStatus.OPEN)
+        db.session.add_all([slot_a, slot_b, slot_c])
+        db.session.commit()
+
+        b_a1 = Booking(farmer_id=farmer1.id, slot_id=slot_a.id,
+                       status=BookingStatus.CONFIRMED, token_number="K-0001")
+        b_b1 = Booking(farmer_id=farmer2.id, slot_id=slot_b.id,
+                       status=BookingStatus.CONFIRMED, token_number="K-0002")
+        db.session.add_all([b_a1, b_b1])
+        db.session.commit()
+
+        yield {
+            "centre_a_id": c_a.id,
+            "centre_b_id": c_b.id,
+            "slot_a_id": slot_a.id,
+            "slot_c_id": slot_c.id,
+            "booking_a1_id": b_a1.id,
+            "booking_b1_id": b_b1.id,
+            "slot_date": slot_date,
+            "farmer1_sub": u_farmer1.supabase_user_id,
+            "farmer2_sub": u_farmer2.supabase_user_id,
+            "farmer1_user_id": u_farmer1.id,
+            "staff_a_sub": u_staff_a.supabase_user_id,
+            "staff_a_user_id": u_staff_a.id,
+            "staff_b_sub": u_staff_b.supabase_user_id,
+            "staff_none_sub": u_staff_none.supabase_user_id,
+            "admin_sub": u_admin.supabase_user_id,
+            "admin_user_id": u_admin.id,
+        }
+
+
+def create_pass_directly(app, booking_id) -> str:
+    """Create the pass for a booking through the service and return its pass id.
+
+    The booking fixtures are inserted directly (as demo/seed data is), so this
+    mirrors the pass that the booking flow would already have created.
+    """
+    with app.app_context():
+        booking = db.session.get(Booking, booking_id)
+        return create_pass_for_booking(booking).secure_pass_id
+
+
+def set_booking_status(booking_id, status) -> None:
+    """Update a booking status on the active session.
+
+    The `app` fixture keeps an application context (and therefore the session
+    that also serves the test request) alive, so the mutation must be made
+    through that session - otherwise the request would read a stale,
+    identity-mapped booking.
+    """
+    booking = db.session.get(Booking, booking_id)
+    booking.status = status
+    db.session.commit()
+
+
+def set_pass_status(booking_id, status) -> None:
+    """Update a pass status on the active session (see set_booking_status)."""
+    row = SmartQueuePass.query.filter_by(booking_id=booking_id).first()
+    row.status = status
+    db.session.commit()
+
+
+# --- A/B/C/D: model, constraints and initial state --------------------------
+
+
+def test_a_pass_model_can_be_created(app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    with app.app_context():
+        booking = db.session.get(Booking, booking_id)
+        pass_row = create_pass_for_booking(booking)
+
+        assert isinstance(pass_row, SmartQueuePass)
+        assert pass_row.id is not None
+        assert pass_row.booking_id == booking.id
+        assert pass_row.secure_pass_id.startswith("kp_pass_")
+        assert pass_row.created_at is not None
+        assert pass_row.updated_at is not None
+
+        db.session.expire_all()
+        stored = db.session.get(SmartQueuePass, pass_row.id)
+        # Booking 1 --- 1 SmartQueuePass (both directions)
+        assert stored.booking.id == booking_id
+        assert stored.booking.smart_queue_pass.id == stored.id
+
+
+def test_b_booking_id_must_be_unique(app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    with app.app_context():
+        create_pass_for_booking(db.session.get(Booking, booking_id))
+        # A second pass row for the same booking must be rejected by the database.
+        db.session.add(
+            SmartQueuePass(
+                booking_id=booking_id,
+                secure_pass_id=generate_secure_pass_id(),
+                status=SmartQueuePassStatus.ACTIVE,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+    assert pass_count(app) == 1
+
+
+def test_c_secure_pass_identifier_must_be_unique(app, pass_setup):
+    with app.app_context():
+        first = create_pass_for_booking(db.session.get(Booking, pass_setup["booking_a1_id"]))
+        duplicate_identifier = first.secure_pass_id
+        db.session.add(
+            SmartQueuePass(
+                booking_id=pass_setup["booking_b1_id"],
+                secure_pass_id=duplicate_identifier,
+                status=SmartQueuePassStatus.ACTIVE,
+            )
+        )
+        with pytest.raises(IntegrityError):
+            db.session.commit()
+        db.session.rollback()
+
+    assert pass_count(app) == 1
+
+
+def test_d_pass_starts_active(app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    create_pass_directly(app, booking_id)
+
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.ACTIVE
+    assert snapshot["verified_at"] is None
+    assert snapshot["verified_by"] is None
+    assert snapshot["verification_centre_id"] is None
+
+
+def test_pass_identifier_is_random_url_safe_and_non_sequential(app):
+    with app.app_context():
+        identifiers = [generate_secure_pass_id() for _ in range(25)]
+
+    assert len(set(identifiers)) == 25  # never repeats
+    for value in identifiers:
+        assert re.fullmatch(r"kp_pass_[A-Za-z0-9_\-]{40,}", value)
+        # Not a queue token, not a raw numeric id, no embedded separators.
+        assert not re.fullmatch(r"K-\d+", value)
+        assert not value.removeprefix("kp_pass_").isdigit()
+
+
+# --- E/F: booking integration and idempotency -------------------------------
+
+
+def test_e_confirmed_booking_creates_exactly_one_pass(client, app, pass_setup):
+    res = make_call(
+        client, "POST", "/api/bookings",
+        pass_setup["farmer1_sub"], {"slot_id": pass_setup["slot_c_id"]},
+    )
+    assert res.status_code == 201
+    booking = res.get_json()["booking"]
+    assert booking["status"] == BookingStatus.CONFIRMED
+
+    snapshot = pass_snapshot(app, booking["id"])
+    assert snapshot is not None
+    assert snapshot["status"] == SmartQueuePassStatus.ACTIVE
+    assert pass_count(app) == 1
+
+
+def test_f_pass_creation_is_idempotent(app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    with app.app_context():
+        booking = db.session.get(Booking, booking_id)
+        first = create_pass_for_booking(booking)
+        first_identifier = first.secure_pass_id
+
+        second = create_pass_for_booking(booking)
+        third = get_or_create_pass_for_booking(booking)
+
+        assert second.secure_pass_id == first_identifier
+        assert third.secure_pass_id == first_identifier
+
+    assert pass_count(app) == 1
+
+
+# --- G/H/I: farmer access rules ---------------------------------------------
+
+
+def test_g_farmer_can_retrieve_own_pass(client, app, pass_setup):
+    assert pass_count(app) == 0  # booking inserted directly: pass created lazily
+
+    res = make_call(
+        client, "GET", f"/api/queue-pass/my/{pass_setup['booking_a1_id']}",
+        pass_setup["farmer1_sub"],
+    )
+    assert res.status_code == 200
+
+    payload = res.get_json()["smart_queue_pass"]
+    assert payload["pass_id"].startswith("kp_pass_")
+    assert payload["status"] == SmartQueuePassStatus.ACTIVE
+    assert payload["entry_verified"] is False
+    assert payload["booking"]["id"] == pass_setup["booking_a1_id"]
+    assert payload["booking"]["token_number"] == "K-0001"
+    assert payload["farmer"]["name"] == "Pass Farmer One"
+    assert payload["centre"]["id"] == pass_setup["centre_a_id"]
+    assert payload["crop"]["name"] == "Pass Test Wheat"
+    assert payload["slot"]["slot_date"] == pass_setup["slot_date"].isoformat()
+    assert payload["slot"]["start_time"] == "09:00"
+    assert payload["slot"]["end_time"] == "10:00"
+    assert pass_count(app) == 1  # exactly one pass, created on demand
+
+
+def test_h_farmer_cannot_retrieve_another_farmers_pass(client, app, pass_setup):
+    res = make_call(
+        client, "GET", f"/api/queue-pass/my/{pass_setup['booking_a1_id']}",
+        pass_setup["farmer2_sub"],
+    )
+    assert res.status_code == 404
+    assert "smart_queue_pass" not in res.get_json()
+    # No pass is created or disclosed for another farmer's booking.
+    assert pass_count(app) == 0
+
+
+def test_i_farmer_cannot_verify_a_pass(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["farmer1_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 403
+
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.ACTIVE
+    assert snapshot["verified_at"] is None
+
+
+def test_farmer_cannot_lookup_passes(client, app, pass_setup):
+    secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+    res = make_call(
+        client, "GET", f"/api/queue-pass/lookup/{secure_id}", pass_setup["farmer1_sub"]
+    )
+    assert res.status_code == 403
+
+
+# --- J/K/L/M: staff centre isolation, unassigned staff and admin -------------
+
+
+def test_j_assigned_staff_can_verify_pass_of_own_centre(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 200
+
+    payload = res.get_json()["smart_queue_pass"]
+    assert payload["status"] == SmartQueuePassStatus.VERIFIED
+    assert payload["entry_verified"] is True
+    assert payload["verification_centre_id"] == pass_setup["centre_a_id"]
+
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.VERIFIED
+
+
+def test_k_staff_cannot_verify_pass_of_another_centre(client, app, pass_setup):
+    booking_id = pass_setup["booking_b1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    # STAFF of centre A -> centre B pass: forbidden, nothing is written.
+    denied = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert denied.status_code == 403
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.ACTIVE
+    assert snapshot["verified_by"] is None
+    assert snapshot["verification_centre_id"] is None
+
+    # The centre B staff member may verify it.
+    allowed = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_b_sub"], {"pass_id": secure_id},
+    )
+    assert allowed.status_code == 200
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.VERIFIED
+
+
+def test_l_unassigned_staff_cannot_verify_or_lookup(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    verify = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_none_sub"], {"pass_id": secure_id},
+    )
+    assert verify.status_code == 403
+
+    lookup = make_call(
+        client, "GET", f"/api/queue-pass/lookup/{secure_id}", pass_setup["staff_none_sub"]
+    )
+    assert lookup.status_code == 403
+
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.ACTIVE
+
+
+def test_m_admin_can_verify_any_centre(client, app, pass_setup):
+    booking_id = pass_setup["booking_b1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["admin_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 200
+
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.VERIFIED
+    assert snapshot["verified_by"] == pass_setup["admin_user_id"]
+    assert snapshot["verification_centre_id"] == pass_setup["centre_b_id"]
+
+
+# --- N/O/P/Q: recorded verification data ------------------------------------
+
+
+def test_n_to_q_verification_records_status_time_actor_and_centre(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    before = datetime.now(timezone.utc)
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    after = datetime.now(timezone.utc)
+    assert res.status_code == 200
+
+    snapshot = pass_snapshot(app, booking_id)
+
+    # N: ACTIVE -> VERIFIED
+    assert snapshot["status"] == SmartQueuePassStatus.VERIFIED
+    # O: verified_at is recorded (SQLite stores it without a tz label)
+    assert snapshot["verified_at"] is not None
+    verified_at = snapshot["verified_at"]
+    if verified_at.tzinfo is not None:
+        assert before <= verified_at <= after
+    else:
+        assert before.replace(tzinfo=None) <= verified_at <= after.replace(tzinfo=None)
+    # P: verified_by is the authenticated STAFF user
+    assert snapshot["verified_by"] == pass_setup["staff_a_user_id"]
+    # Q: verification_centre_id is the operating centre
+    assert snapshot["verification_centre_id"] == pass_setup["centre_a_id"]
+
+
+# --- R/S/T/U/V/W/X/Y/Z: lifecycle guard rails -------------------------------
+
+
+def test_r_already_verified_pass_cannot_be_verified_again(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    first = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert first.status_code == 200
+    verified_at_before = pass_snapshot(app, booking_id)["verified_at"]
+
+    second = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert second.status_code == 409
+    assert second.get_json()["code"] == "PASS_CONFLICT"
+
+    snapshot = pass_snapshot(app, booking_id)
+    assert snapshot["status"] == SmartQueuePassStatus.VERIFIED
+    assert snapshot["verified_at"] == verified_at_before  # untouched
+    assert snapshot["verified_by"] == pass_setup["staff_a_user_id"]
+
+
+def test_s_cancelled_pass_cannot_be_verified(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    set_pass_status(booking_id, SmartQueuePassStatus.CANCELLED)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 409
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.CANCELLED
+
+
+def test_t_completed_booking_cannot_be_verified(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    set_booking_status(booking_id, BookingStatus.COMPLETED)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 409
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.ACTIVE
+
+
+def test_u_rejected_procurement_booking_cannot_be_verified(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    db.session.add(Procurement(
+        booking_id=booking_id,
+        procurement_status=ProcurementStatus.REJECTED,
+        procurement_date=pass_setup["slot_date"],
+    ))
+    db.session.commit()
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 409
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.ACTIVE
+
+
+def test_cancelled_booking_pass_cannot_be_verified(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    set_booking_status(booking_id, BookingStatus.CANCELLED)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 409
+
+
+def test_v_unknown_pass_identifier_returns_404_without_leakage(client, app, pass_setup):
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"],
+        {"pass_id": "kp_pass_invalididentifiertryingtoguessapassvalue"},
+    )
+    assert res.status_code == 404
+    payload = res.get_json()
+    assert payload["code"] == "NOT_FOUND"
+    assert "smart_queue_pass" not in payload
+    assert "booking" not in payload
+    assert "K-" not in res.get_data(as_text=True)
+
+
+def test_w_verification_does_not_start_or_complete_procurement(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 200
+    payload = res.get_json()["smart_queue_pass"]
+    # Entry only: no procurement record exists or was created.
+    assert payload["procurement"] is None
+    assert booking_status(app, booking_id) == BookingStatus.CONFIRMED
+
+    with app.app_context():
+        db.session.expire_all()
+        assert Procurement.query.count() == 0
+
+
+def test_x_booking_cancellation_cancels_the_active_pass(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+
+    got = make_call(
+        client, "GET", f"/api/queue-pass/my/{booking_id}", pass_setup["farmer1_sub"]
+    )
+    assert got.status_code == 200
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.ACTIVE
+
+    cancelled = make_call(
+        client, "PUT", f"/api/bookings/{booking_id}/cancel", pass_setup["farmer1_sub"]
+    )
+    assert cancelled.status_code == 200
+    assert booking_status(app, booking_id) == BookingStatus.CANCELLED
+
+    # ACTIVE -> CANCELLED, and no additional pass was created.
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.CANCELLED
+    assert pass_count(app) == 1
+
+
+def test_y_audit_log_written_for_successful_verification(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 200
+
+    entries = audit_entries(app, "VERIFY_SMART_QUEUE_PASS")
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["entity_type"] == "SMART_QUEUE_PASS"
+    assert entry["user_id"] == pass_setup["staff_a_user_id"]
+    assert entry["metadata"]["booking_id"] == booking_id
+    assert entry["metadata"]["centre_id"] == pass_setup["centre_a_id"]
+    assert entry["metadata"]["result"] == SmartQueuePassStatus.VERIFIED
+    assert entry["metadata"]["actor_role"] == UserRole.STAFF
+    # No sensitive data is stored in the audit trail.
+    audit_blob = str(entry).lower()
+    for forbidden in ("9876500101", "phone", "ifsc", "password", "jwt", "authorization"):
+        assert forbidden not in audit_blob
+
+
+def test_z_cross_centre_lookup_forbidden_but_admin_lookup_allowed_and_read_only(
+    client, app, pass_setup
+):
+    booking_id = pass_setup["booking_b1_id"]
+    secure_id = create_pass_directly(app, booking_id)
+
+    denied = make_call(
+        client, "GET", f"/api/queue-pass/lookup/{secure_id}", pass_setup["staff_a_sub"]
+    )
+    assert denied.status_code == 403
+
+    allowed = make_call(
+        client, "GET", f"/api/queue-pass/lookup/{secure_id}", pass_setup["admin_sub"]
+    )
+    assert allowed.status_code == 200
+    payload = allowed.get_json()["smart_queue_pass"]
+    assert payload["status"] == SmartQueuePassStatus.ACTIVE
+    assert payload["centre"]["id"] == pass_setup["centre_b_id"]
+
+    # A lookup must never verify the pass.
+    assert pass_snapshot(app, booking_id)["status"] == SmartQueuePassStatus.ACTIVE
+
+
+def test_failed_verification_attempt_is_audited(client, app, pass_setup):
+    secure_id = create_pass_directly(app, pass_setup["booking_b1_id"])
+
+    res = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": secure_id},
+    )
+    assert res.status_code == 403
+
+    entries = audit_entries(app, "FAILED_SMART_QUEUE_PASS_VERIFICATION")
+    assert len(entries) == 1
+    entry = entries[0]
+    assert entry["user_id"] == pass_setup["staff_a_user_id"]
+    assert entry["entity_type"] == "SMART_QUEUE_PASS"
+    assert entry["metadata"]["result"] == "REJECTED"
+    assert entry["metadata"]["reason_code"] == "FORBIDDEN"
+    assert entry["metadata"]["centre_id"] == pass_setup["centre_a_id"]
+
+
+# --- Additional API / security / regression checks --------------------------
+
+
+def test_verification_endpoint_requires_authentication(client, pass_setup):
+    res = client.post("/api/queue-pass/verify", json={"pass_id": "kp_pass_anonymous"})
+    assert res.status_code == 401
+
+
+def test_verify_endpoint_validates_the_request_body(client, pass_setup):
+    no_body = make_call(
+        client, "POST", "/api/queue-pass/verify", pass_setup["staff_a_sub"], None
+    )
+    assert no_body.status_code == 400
+
+    blank = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": "   "},
+    )
+    assert blank.status_code == 400
+
+    wrong_type = make_call(
+        client, "POST", "/api/queue-pass/verify",
+        pass_setup["staff_a_sub"], {"pass_id": 12345},
+    )
+    assert wrong_type.status_code == 400
+
+
+def test_lookup_of_unknown_pass_returns_404(client, pass_setup):
+    res = make_call(
+        client, "GET", "/api/queue-pass/lookup/kp_pass_does_not_exist",
+        pass_setup["admin_sub"],
+    )
+    assert res.status_code == 404
+
+
+def test_farmer_pass_unavailable_for_unconfirmed_booking(client, app, pass_setup):
+    booking_id = pass_setup["booking_a1_id"]
+    set_booking_status(booking_id, BookingStatus.PENDING)
+
+    res = make_call(
+        client, "GET", f"/api/queue-pass/my/{booking_id}", pass_setup["farmer1_sub"]
+    )
+    assert res.status_code == 409
+    assert pass_count(app) == 0  # no pass is created for a non-confirmed booking
+
+
+def test_staff_cannot_read_a_farmers_pass_through_the_farmer_endpoint(client, pass_setup):
+    res = make_call(
+        client, "GET", f"/api/queue-pass/my/{pass_setup['booking_a1_id']}",
+        pass_setup["staff_a_sub"],
+    )
+    assert res.status_code == 403
+
+
+def test_pass_response_contains_no_sensitive_personal_data(client, app, pass_setup):
+    res = make_call(
+        client, "GET", f"/api/queue-pass/my/{pass_setup['booking_a1_id']}",
+        pass_setup["farmer1_sub"],
+    )
+    assert res.status_code == 200
+
+    body = res.get_data(as_text=True).lower()
+    assert "9876500101" not in body  # farmer phone number
+    for forbidden in ("phone", "ifsc", "bank_account", "password", "jwt",
+                      "authorization", "secret"):
+        assert forbidden not in body
+
+    pass_id = res.get_json()["smart_queue_pass"]["pass_id"]
+    # The QR payload never embeds internal identifiers or the queue token:
+    # it is not the booking id, not the farmer id and not the K-#### token.
+    assert pass_id != str(pass_setup["booking_a1_id"])
+    assert "K-0001" not in pass_id
+    assert not pass_id.removeprefix("kp_pass_").isdigit()
+    assert "user-pass-farmer1" not in pass_id
+
+
+def test_existing_booking_flow_still_works_with_pass_creation(client, app, pass_setup):
+    first = make_call(
+        client, "POST", "/api/bookings",
+        pass_setup["farmer1_sub"], {"slot_id": pass_setup["slot_c_id"]},
+    )
+    assert first.status_code == 201
+    booking_id = first.get_json()["booking"]["id"]
+    assert pass_count(app) == 1
+
+    # Duplicate booking protection is untouched.
+    duplicate = make_call(
+        client, "POST", "/api/bookings",
+        pass_setup["farmer1_sub"], {"slot_id": pass_setup["slot_c_id"]},
+    )
+    assert duplicate.status_code == 409
+    assert pass_count(app) == 1  # no extra pass was created
+
+    listing = make_call(client, "GET", "/api/bookings/my", pass_setup["farmer1_sub"])
+    assert listing.status_code == 200
+    assert any(b["id"] == booking_id for b in listing.get_json()["bookings"])

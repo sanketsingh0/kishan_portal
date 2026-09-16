@@ -2,13 +2,19 @@
 
 Encapsulates business logic, validations, capacity constraints, duplicate booking checks,
 and time-conflict prevention for farmer slot bookings.
+
+A confirmed booking also receives exactly one Smart Queue Pass (SIH 26032 stage 1);
+the pass lifecycle is kept in sync with the booking here.
 """
 
+import logging
 from datetime import date, datetime, timezone
 from sqlalchemy.exc import IntegrityError
 from app.extensions import db
 from app.models import Booking, BookingStatus, Slot, SlotStatus, Farmer, Centre
 from app.services.farmer_service import get_farmer_by_user_id
+
+logger = logging.getLogger(__name__)
 
 
 class BookingError(Exception):
@@ -227,7 +233,26 @@ def create_booking(user_id: int, slot_id: int) -> Booking:
     except Exception:
         pass
 
+    # --- Smart Queue Pass (SIH 26032 stage 1) -----------------------------------
+    # Every confirmed booking gets exactly one secure digital mandi entry pass.
+    # Created AFTER the booking transaction committed and isolated from it, so a
+    # pass problem can never block or roll back a booking; creation is idempotent
+    # and never produces a second pass for the same booking.
+    _create_smart_queue_pass(booking)
+
     return booking
+
+
+def _create_smart_queue_pass(booking: Booking) -> None:
+    """Best-effort creation of the booking's Smart Queue Pass (never raises)."""
+    try:
+        from app.services.smart_queue_pass_service import create_pass_for_booking
+
+        create_pass_for_booking(booking)
+    except Exception as exc:
+        logger.warning(
+            "Smart Queue Pass creation failed for booking %s: %s", booking.id, exc
+        )
 
 
 def get_farmer_bookings(user_id: int, status: str | None = None) -> list[Booking]:
@@ -302,5 +327,20 @@ def cancel_booking(booking_id: int, user_id: int, is_staff_or_admin: bool = Fals
             )
     except Exception:
         pass
+
+    # --- Smart Queue Pass (SIH 26032 stage 1) -----------------------------------
+    # An ACTIVE pass is cancelled together with its booking. Runs after the
+    # existing cancellation commit and is fully isolated, so existing
+    # cancellation / capacity-release behaviour is never affected. A pass that
+    # cannot be cancelled stays rejected at verification time anyway, because
+    # booking eligibility is validated server-side.
+    try:
+        from app.services.smart_queue_pass_service import cancel_pass_for_booking
+
+        cancel_pass_for_booking(booking)
+    except Exception as exc:
+        logger.warning(
+            "Smart Queue Pass cancellation failed for booking %s: %s", booking.id, exc
+        )
 
     return booking
