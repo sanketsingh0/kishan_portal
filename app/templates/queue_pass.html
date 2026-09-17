@@ -192,14 +192,23 @@
       <div class="subtitle">SMART QUEUE PASS</div>
     </div>
 
-    <div class="qr-section">
-      <img id="qrCode" src="" alt="Smart Queue Pass QR Code">
+    <div id="passLoading" class="text-center py-4">
+      <span class="spinner-border" role="status" aria-hidden="true" style="color: var(--kp-primary);"></span>
+      <p class="text-muted small mb-0 mt-3">Loading your Smart Queue Pass...</p>
     </div>
 
-    <div class="pass-details" id="passDetails"></div>
+    <div id="passError" class="alert alert-warning d-none mt-3" role="alert"></div>
 
-    <div class="pass-footer">
-      <p class="mb-0"><i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i>Show this QR at the mandi entry desk</p>
+    <div id="passContent" class="d-none">
+      <div class="qr-section">
+        <img id="qrCode" src="" alt="Smart Queue Pass QR Code">
+      </div>
+
+      <div class="pass-details" id="passDetails"></div>
+
+      <div class="pass-footer">
+        <p class="mb-0"><i class="fa-solid fa-triangle-exclamation me-1 text-warning"></i>Show this QR at the mandi entry desk</p>
+      </div>
     </div>
 
     <div class="action-buttons">
@@ -212,11 +221,46 @@
     </div>
   </div>
 
+  <!-- Shared auth helpers: Bearer header injection + 401 -> /login redirect. -->
+  <script src="/static/js/auth.js"></script>
   <script>
-    const passData = {{ pass_data_json|safe }};
+    /* This page is a PUBLIC HTML shell: the server embeds NO pass, QR code or
+       farmer data - only the booking id from the URL. The pass is requested
+       from the authenticated JSON API below, where window.KP.authFetch()
+       attaches the Bearer token as an Authorization header. Tokens are never
+       placed in a URL and the API remains fully protected. */
+    const BOOKING_ID = {{ booking_id|tojson }};
+    const PASS_ENDPOINT = '/api/queue-pass/my/' + encodeURIComponent(BOOKING_ID) + '/display';
+
+    let passData = null;
+
+    /* Build a detail row with DOM nodes so pass values are never treated as
+       HTML (no markup injection from server-provided strings). */
+    function addDetailRow(label, value) {
+      const row = document.createElement('div');
+      row.className = 'pass-detail-row';
+
+      const labelEl = document.createElement('span');
+      labelEl.className = 'pass-detail-label';
+      labelEl.textContent = label;
+
+      const valueEl = document.createElement('span');
+      valueEl.className = 'pass-detail-value';
+      if (value && typeof value === 'object' && value.nodeType === 1) {
+        valueEl.appendChild(value);
+      } else {
+        valueEl.textContent = value || '---';
+      }
+
+      row.appendChild(labelEl);
+      row.appendChild(valueEl);
+      return row;
+    }
 
     function populatePassDetails() {
       const container = document.getElementById('passDetails');
+      container.innerHTML = '';
+
       const rows = [
         { label: 'Farmer', value: passData.farmer_name || '---' },
         { label: 'Booking ID', value: passData.booking_id ? '#' + passData.booking_id : '---' },
@@ -226,20 +270,8 @@
         { label: 'Slot', value: (passData.start_time || '') + ' - ' + (passData.end_time || '') },
         { label: 'Token', value: passData.token_number || '---' },
       ];
-      container.innerHTML = rows.map(row => `
-        <div class="pass-detail-row">
-          <span class="pass-detail-label">${row.label}</span>
-          <span class="pass-detail-value">${row.value}</span>
-        </div>
-      `).join('');
+      rows.forEach(row => container.appendChild(addDetailRow(row.label, row.value)));
 
-      const statusDiv = document.createElement('div');
-      statusDiv.className = 'pass-detail-row';
-      const statusLabel = document.createElement('span');
-      statusLabel.className = 'pass-detail-label';
-      statusLabel.textContent = 'Pass Status';
-      const statusValue = document.createElement('span');
-      statusValue.className = 'pass-detail-value';
       const statusBadge = document.createElement('span');
       statusBadge.className = 'pass-status';
       const status = passData.pass_status || 'ACTIVE';
@@ -256,14 +288,13 @@
         statusBadge.classList.add('status-active');
         statusBadge.textContent = status;
       }
-      statusValue.appendChild(statusBadge);
-      statusDiv.appendChild(statusLabel);
-      statusDiv.appendChild(statusValue);
-      container.appendChild(statusDiv);
+      container.appendChild(addDetailRow('Pass Status', statusBadge));
     }
 
     function setQRCode() {
       const qrImg = document.getElementById('qrCode');
+      // The QR image encodes ONLY the opaque secure pass id; no farmer,
+      // booking, phone, bank or token data is ever encoded.
       if (passData.qr_code_base64) {
         qrImg.src = 'data:image/png;base64,' + passData.qr_code_base64;
       } else {
@@ -271,11 +302,71 @@
       }
     }
 
-    document.addEventListener('DOMContentLoaded', function() {
+    function renderPass(data) {
+      passData = data;
       populatePassDetails();
       setQRCode();
-    });
+      document.getElementById('passLoading').classList.add('d-none');
+      document.getElementById('passContent').classList.remove('d-none');
+    }
+
+    function showError(message) {
+      const errorBox = document.getElementById('passError');
+      errorBox.textContent = message;
+      errorBox.classList.remove('d-none');
+      document.getElementById('passLoading').classList.add('d-none');
+      document.getElementById('passContent').classList.add('d-none');
+    }
+
+    /* Fetch the pass from the protected JSON API with the farmer's Bearer
+       token (header only) and render it. Ownership is enforced server-side, so
+       another farmer's booking id simply returns 404 here. */
+    function loadPass() {
+      if (!Number.isInteger(BOOKING_ID)) {
+        showError('No Smart Queue Pass found for this booking.');
+        return;
+      }
+      if (!window.KP || typeof window.KP.authFetch !== 'function') {
+        showError('Unable to load the Smart Queue Pass. Please refresh the page.');
+        return;
+      }
+
+      window.KP.authFetch(PASS_ENDPOINT)
+        .then(function (res) {
+          if (res.status === 401) {
+            // authFetch() has already redirected an expired session to /login.
+            showError('Session expired. Please login again.');
+            return null;
+          }
+          if (!res.ok) {
+            return res.json()
+              .catch(function () { return null; })
+              .then(function (body) {
+                showError(
+                  (body && body.message) ||
+                  'No Smart Queue Pass found for this booking.'
+                );
+                return null;
+              });
+          }
+          return res.json();
+        })
+        .then(function (data) {
+          if (!data) {
+            return;
+          }
+          if (!data.pass_data) {
+            showError('No Smart Queue Pass found for this booking.');
+            return;
+          }
+          renderPass(data.pass_data);
+        })
+        .catch(function () {
+          showError('Network error. Please check your connection and try again.');
+        });
+    }
+
+    document.addEventListener('DOMContentLoaded', loadPass);
   </script>
 </body>
 </html>
-    <div class="pass-header">

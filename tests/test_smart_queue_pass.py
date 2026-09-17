@@ -1145,3 +1145,214 @@ class TestStage2StaffScanner:
             {"pass_id": secure_id},
         )
         assert res.status_code == 403
+# =============================================================================
+# STAGE 2 REGRESSION: Farmer Dashboard -> Smart Queue Pass page navigation
+# =============================================================================
+#
+# Production bug: the "View Smart Queue Pass" button did
+#     window.open('/api/queue-pass/my/<booking_id>/view')
+# A plain browser navigation cannot send the application's Bearer token, so the
+# protected API answered 401 {"error": "Authentication required"}.
+#
+# Fixed flow (covered below):
+#     Farmer Dashboard -> /farmer/queue-pass/<booking_id> (HTML page)
+#         -> window.KP.authFetch('/api/queue-pass/my/<booking_id>/display')
+#         -> render pass + QR
+# =============================================================================
+
+PASS_PAGE_ROUTE = "/farmer/queue-pass/{}"
+PASS_API_PREFIX = "/api/queue-pass/my/"
+
+
+def dashboard_view_queue_pass_source(client) -> str:
+    """Return the JS source of the Farmer Dashboard's viewQueuePass handler.
+
+    /farmer/dashboard is a public HTML shell (like every other page route in
+    this app), so no Authorization header is required to read it.
+    """
+    res = client.get("/farmer/dashboard")
+    assert res.status_code == 200
+    html = res.get_data(as_text=True)
+    match = re.search(r"function viewQueuePass\(bookingId\)\s*\{(.*?)\}", html, re.S)
+    assert match is not None, "Farmer Dashboard has no viewQueuePass handler"
+    return match.group(1)
+
+
+class TestStage2FarmerDashboardPassNavigation:
+    """Stage 2 regression: the button must open the HTML page, not the API."""
+
+    def test_dashboard_button_does_not_navigate_to_protected_api(self, client):
+        """The reported bug: the button must NOT navigate to the API route."""
+        handler = dashboard_view_queue_pass_source(client)
+
+        assert PASS_API_PREFIX not in handler
+        assert "/api/queue-pass" not in handler
+        assert "window.open" in handler
+        assert "/farmer/queue-pass/" in handler
+        # The booking id is URL-encoded and no token ever appears in the URL.
+        assert "encodeURIComponent(bookingId)" in handler
+        assert "token" not in handler.lower()
+        assert "bearer" not in handler.lower()
+
+    def test_dashboard_button_is_wired_to_the_handler(self, client):
+        res = client.get("/farmer/dashboard")
+        html = res.get_data(as_text=True)
+        assert "View Smart Queue Pass" in html
+        assert "viewQueuePass(${b.id})" in html
+
+    def test_dashboard_page_never_references_the_queue_pass_api(self, client):
+        """Defence in depth: no dashboard link points at /api/queue-pass."""
+        res = client.get("/farmer/dashboard")
+        assert "/api/queue-pass" not in res.get_data(as_text=True)
+
+    def test_pass_page_route_serves_html_without_an_auth_header(self, client, app, pass_setup):
+        """B. The pass page is a normal HTML page (no Bearer header needed)."""
+        create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = client.get(PASS_PAGE_ROUTE.format(pass_setup["booking_a1_id"]))
+        assert res.status_code == 200
+
+        body = res.get_data(as_text=True)
+        assert "KISANPROCURE" in body
+        assert "SMART QUEUE PASS" in body
+        assert "Print / Download" in body
+
+    def test_pass_page_route_rejects_invalid_booking_ids(self, client):
+        """Only integer booking ids reach the page (no path traversal)."""
+        assert client.get("/farmer/queue-pass/not-a-number").status_code == 404
+        assert client.get("/farmer/queue-pass/../../etc/passwd").status_code == 404
+
+    def test_pass_page_uses_the_authenticated_stage2_request(self, client, pass_setup):
+        """C. The page reuses window.KP.authFetch() + the /display endpoint."""
+        res = client.get(PASS_PAGE_ROUTE.format(pass_setup["booking_a1_id"]))
+        body = res.get_data(as_text=True)
+
+        assert "/static/js/auth.js" in body  # Stage 2 auth mechanism
+        assert "window.KP.authFetch" in body
+        assert PASS_API_PREFIX in body       # /api/queue-pass/my/
+        assert "/display" in body
+
+        # The Bearer token must come from the shared helper (header), never
+        # from a URL query parameter or an embedded token value.
+        assert "token=" not in body
+        assert "access_token" not in body
+        assert "mock-token" not in body
+        assert "eyJ" not in body  # no JWT anywhere in the page
+
+    def test_pass_page_html_embeds_no_pass_or_personal_data(self, client, app, pass_setup):
+        """D. The server-rendered shell exposes no sensitive information."""
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = client.get(PASS_PAGE_ROUTE.format(pass_setup["booking_a1_id"]))
+        body = res.get_data(as_text=True)
+        lowered = body.lower()
+
+        # No pass identifier / QR image / booking or farmer data at all.
+        assert secure_id not in body
+        assert "kp_pass_" not in body
+        # No QR image is embedded: the src is only built at runtime from the
+        # authenticated API response (the endpoint string below is just JS).
+        assert "data:image/png;base64,iVBOR" not in body
+        assert "data:image/png;base64,' + passData.qr_code_base64" in body
+        assert "K-0001" not in body
+        assert "9876500101" not in body  # farmer phone
+        assert "ifsc" not in lowered
+        assert "bank_account" not in lowered
+
+    def test_authenticated_display_api_still_works(self, client, app, pass_setup):
+        """E. The authenticated API request behind the page still works."""
+        create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = make_call(
+            client, "GET",
+            f"{PASS_API_PREFIX}{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer1_sub"],
+        )
+        assert res.status_code == 200
+
+        payload = res.get_json()["pass_data"]
+        assert payload["pass_id"].startswith("kp_pass_")
+        assert payload["booking_id"] == pass_setup["booking_a1_id"]
+        assert payload["token_number"] == "K-0001"
+        assert payload["qr_code_base64"]
+        # No personal/financial data in the display payload.
+        assert "9876500101" not in res.get_data(as_text=True)
+        assert "ifsc" not in res.get_data(as_text=True).lower()
+
+    def test_display_api_remains_protected(self, client, app, pass_setup):
+        """F. Authentication was not weakened: no header -> 401 JSON."""
+        create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = client.get(f"{PASS_API_PREFIX}{pass_setup['booking_a1_id']}/display")
+        assert res.status_code == 401
+        payload = res.get_json()
+        assert payload["error"] == "Authentication required"
+        assert "pass_data" not in payload
+
+    def test_another_farmer_cannot_load_the_pass(self, client, app, pass_setup):
+        """G. Farmer ownership checks are preserved end to end."""
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        # The HTML shell is data-free, so even a foreign booking id leaks nothing.
+        shell = client.get(PASS_PAGE_ROUTE.format(pass_setup["booking_a1_id"]))
+        assert shell.status_code == 200
+        assert secure_id not in shell.get_data(as_text=True)
+
+        # The API still hides the pass from every other farmer.
+        res = make_call(
+            client, "GET",
+            f"{PASS_API_PREFIX}{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer2_sub"],
+        )
+        assert res.status_code == 404
+        assert "pass_data" not in res.get_json()
+        assert secure_id not in res.get_data(as_text=True)
+
+    def test_qr_from_display_endpoint_is_only_the_secure_pass_id(self, client, app, pass_setup):
+        """H. QR security is preserved: the payload is only secure_pass_id."""
+        import base64
+        import io
+
+        from PIL import Image
+        from pyzbar import pyzbar
+
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = make_call(
+            client, "GET",
+            f"{PASS_API_PREFIX}{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer1_sub"],
+        )
+        qr_base64 = res.get_json()["pass_data"]["qr_code_base64"]
+
+        decoded = pyzbar.decode(Image.open(io.BytesIO(base64.b64decode(qr_base64))))
+        assert len(decoded) == 1
+        payload = decoded[0].data.decode("utf-8")
+
+        assert payload == secure_id
+        assert payload.startswith("kp_pass_")
+        assert "9876500101" not in payload  # phone
+        assert "K-0001" not in payload  # queue token
+        assert "eyJ" not in payload  # JWT
+
+    def test_legacy_view_route_stays_protected_and_data_free(self, client, app, pass_setup):
+        """I. The old API-namespaced path is neither public nor leaking data."""
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+        legacy = f"{PASS_API_PREFIX}{pass_setup['booking_a1_id']}/view"
+
+        # 1. Browser navigation (no Bearer header) still cannot read it - which
+        #    is exactly why the dashboard must not navigate here.
+        anon = client.get(legacy)
+        assert anon.status_code == 401
+        assert anon.get_json()["error"] == "Authentication required"
+
+        # 2. Authenticated but data-free: even another farmer's booking id only
+        #    yields the shell, never pass/QR/personal data.
+        res = make_call(client, "GET", legacy, pass_setup["farmer2_sub"])
+        assert res.status_code == 200
+        body = res.get_data(as_text=True)
+        assert "SMART QUEUE PASS" in body
+        assert secure_id not in body
+        assert "kp_pass_" not in body
+        assert "K-0001" not in body
+        assert "9876500101" not in body

@@ -929,8 +929,12 @@
     }
 
     // View Smart Queue Pass
+    // Opens the PUBLIC HTML pass page (not the protected JSON API). The page
+    // then fetches the pass through window.KP.authFetch() so the Bearer token is
+    // sent as a header - never in the URL.
     function viewQueuePass(bookingId) {
-      window.open('/api/queue-pass/my/' + bookingId + '/view', '_blank', 'width=400,height=700,menubar=no,toolbar=no,scrollbars=yes');
+      const passPageUrl = '/farmer/queue-pass/' + encodeURIComponent(bookingId);
+      window.open(passPageUrl, '_blank', 'width=420,height=760,menubar=no,toolbar=no,scrollbars=yes');
     }
 
     document.getElementById("logoutBtn").addEventListener("click", function() {

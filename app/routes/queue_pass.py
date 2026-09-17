@@ -180,8 +180,6 @@ def get_queue_pass_for_display(booking_id: int):
         404 Not Found: no pass for this booking
         409 Conflict: pass not available (e.g., booking not confirmed)
     """
-    from app.services.smart_queue_pass_service import get_pass_for_display
-
     # Verify the booking belongs to the authenticated farmer
     booking = db.session.get(Booking, booking_id)
     if not booking:
@@ -215,30 +213,27 @@ def get_queue_pass_for_display(booking_id: int):
 @login_required
 @role_required(UserRole.FARMER)
 def view_queue_pass(booking_id: int):
-    """Render the Smart Queue Pass view page for the farmer (FARMER only).
+    """Deprecated HTML alias for the Smart Queue Pass page (FARMER only).
 
-    This page displays the QR code and pass details in a mobile-friendly,
-    printable format.
+    Kept for backwards compatibility with clients that already request this
+    path programmatically. It renders the SAME data-free ``queue_pass.html``
+    shell as the page route ``/farmer/queue-pass/<booking_id>``: no pass, QR or
+    farmer data is embedded server-side, so nothing is disclosed even if a
+    caller passes another farmer's booking id - ownership is enforced by
+    ``GET /api/queue-pass/my/<booking_id>/display``, which the page calls with
+    ``window.KP.authFetch()``.
+
+    Note: the Farmer Dashboard must NOT navigate here directly. Because this
+    path lives under the protected ``/api`` prefix it requires a Bearer
+    Authorization header, which a plain browser navigation cannot send; the
+    dashboard opens ``/farmer/queue-pass/<booking_id>`` instead.
 
     Returns:
-        200 OK: Rendered queue_pass.html template with pass data
+        200 OK: Rendered queue_pass.html shell (booking id only)
+        401 Unauthorized: missing/malformed Bearer token (API behaviour is kept)
         403 Forbidden: non-farmer access
-        404 Not Found: no pass for this booking
     """
-    from app.services.smart_queue_pass_service import get_pass_for_display
-    import json
-
-    pass_data = get_pass_for_display(booking_id)
-    if pass_data is None:
-        return render_template(
-            "queue_pass.html",
-            pass_data_json=json.dumps({"error": "No pass found"})
-        )
-
-    return render_template(
-        "queue_pass.html",
-        pass_data_json=json.dumps(pass_data)
-    )
+    return render_template("queue_pass.html", booking_id=booking_id)
 
 
 @queue_pass_bp.route("/lookup/<string:pass_id>", methods=["GET"])
