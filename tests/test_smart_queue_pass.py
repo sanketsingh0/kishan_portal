@@ -909,6 +909,398 @@ class TestStage2QRNaSecurity:
         assert "K-0001" not in qr_payload  # queue token
 
 
+class TestStage2QRProductionBackendRegression:
+    """Stage 2 production regression: QR rendering without the Pillow backend.
+
+    Production (Render) installed ``qrcode`` without its ``[pil]`` extra, so
+    ``qrcode.QRCode.make_image()`` fell back to the pure-python ``PyPNGImage``
+    backend. That backend's signature is ``save(stream, kind=None)`` - it has no
+    ``format`` keyword - so the service's ``img.save(buffer, format="PNG")``
+    raised::
+
+        TypeError: PyPNGImage.save() got an unexpected keyword argument 'format'
+
+    which turned ``GET /api/queue-pass/my/<booking_id>/display`` into HTTP 500.
+
+    The fix is backend-agnostic: ``img.save(buffer)``. ``PilImage.save()``
+    defaults its format to ``self.kind`` (``"PNG"``) and ``PyPNGImage`` always
+    writes PNG, so both backends keep producing a valid PNG.
+
+    How the production condition is reproduced without uninstalling Pillow:
+    ``QRCode.make_image()`` chooses ``image_factory = PilImage if Image else
+    PyPNGImage``, where ``Image`` is the ``qrcode.image.pil`` module attribute
+    (``None`` when Pillow is missing). Patching that attribute to ``None``
+    therefore selects the real ``PyPNGImage`` code path - the exact production
+    behaviour - while Pillow stays installed for the other tests.
+    """
+
+    @staticmethod
+    def _record_backends():
+        """Spy returning (list of backends used, patch of ``make_image``)."""
+        import qrcode
+
+        recorded = []
+        real_make_image = qrcode.QRCode.make_image
+
+        def recording_make_image(self, *args, **kwargs):
+            image = real_make_image(self, *args, **kwargs)
+            recorded.append(type(image))
+            return image
+
+        return recorded, patch.object(qrcode.QRCode, "make_image", recording_make_image)
+
+    @staticmethod
+    def _record_payloads():
+        """Spy capturing every payload handed to ``QRCode.add_data``."""
+        import qrcode
+
+        recorded = []
+        real_add_data = qrcode.QRCode.add_data
+
+        def recording_add_data(self, data, *args, **kwargs):
+            recorded.append(data)
+            return real_add_data(self, data, *args, **kwargs)
+
+        return recorded, patch.object(qrcode.QRCode, "add_data", recording_add_data)
+
+    @staticmethod
+    def _png_size(png_bytes):
+        """Validate the PNG signature/IHDR and return its (width, height)."""
+        assert png_bytes[:8] == b"\x89PNG\r\n\x1a\n"  # PNG magic bytes
+        assert png_bytes[12:16] == b"IHDR"
+        return (
+            int.from_bytes(png_bytes[16:20], "big"),
+            int.from_bytes(png_bytes[20:24], "big"),
+        )
+
+    def test_qr_generation_works_without_pillow_pure_png_backend(self, app):
+        """A. The production backend (PyPNGImage) renders a valid base64 PNG."""
+        import base64
+
+        from qrcode.image.pure import PyPNGImage
+
+        from app.services.smart_queue_pass_service import (
+            generate_qr_code_base64,
+            generate_secure_pass_id,
+        )
+
+        secure_id = generate_secure_pass_id()
+        backends, backend_patch = self._record_backends()
+
+        with patch("qrcode.image.pil.Image", None), backend_patch:
+            qr_base64 = generate_qr_code_base64(secure_id)
+
+        # qrcode really did take its no-Pillow fallback branch.
+        assert backends == [PyPNGImage]
+
+        png_bytes = base64.b64decode(qr_base64)
+        width, height = self._png_size(png_bytes)
+        assert width > 0 and height > 0
+        assert base64.b64encode(png_bytes).decode("utf-8") == qr_base64
+        assert len(qr_base64) > 100
+
+    def test_qr_generation_still_works_with_pillow_backend(self, app):
+        """B. With Pillow available the PilImage backend keeps working."""
+        import base64
+
+        import qrcode.image.pil
+
+        from app.services.smart_queue_pass_service import (
+            generate_qr_code_base64,
+            generate_secure_pass_id,
+        )
+
+        if qrcode.image.pil.Image is None:  # Pillow is genuinely not installed
+            pytest.skip("Pillow not installed - covered by the PyPNGImage test.")
+
+        from qrcode.image.pil import PilImage
+
+        secure_id = generate_secure_pass_id()
+        backends, backend_patch = self._record_backends()
+
+        with backend_patch:
+            qr_base64 = generate_qr_code_base64(secure_id)
+
+        assert backends == [PilImage]
+        width, height = self._png_size(base64.b64decode(qr_base64))
+        assert width > 0 and height > 0
+
+    def test_qr_save_call_stays_backend_agnostic(self, app):
+        """C. ``img.save()`` is never called with a ``format`` keyword.
+
+        A strict stand-in for ``PyPNGImage`` (``save(stream, kind=None)`` only)
+        fails the moment the service passes ``format=`` again - the exact
+        production regression.
+        """
+        import base64
+
+        import qrcode
+
+        class PurePngLikeImage:
+            """Same save() contract as ``qrcode.image.pure.PyPNGImage``."""
+
+            kind = "PNG"
+
+            def __init__(self):
+                self.saved = False
+
+            def save(self, stream, kind=None):
+                if kind is not None and kind != self.kind:
+                    raise ValueError(f"Unknown image kind: {kind}")
+                self.saved = True
+                stream.write(b"\x89PNG\r\n\x1a\n")
+
+        rendered = PurePngLikeImage()
+
+        from app.services.smart_queue_pass_service import (
+            generate_qr_code_base64,
+            generate_secure_pass_id,
+        )
+
+        with patch.object(qrcode.QRCode, "make_image", lambda *a, **k: rendered):
+            qr_base64 = generate_qr_code_base64(generate_secure_pass_id())
+
+        assert rendered.saved is True
+        assert base64.b64decode(qr_base64) == b"\x89PNG\r\n\x1a\n"
+
+    # --- payload security (the QR must never carry personal data) -----------
+
+    def test_qr_payload_is_exactly_the_secure_pass_id(self, app, pass_setup):
+        """D. The QR encodes exactly one value: the pass's secure_pass_id."""
+        from app.services.smart_queue_pass_service import (
+            create_pass_for_booking,
+            generate_qr_code_base64,
+        )
+
+        with app.app_context():
+            booking = db.session.get(Booking, pass_setup["booking_a1_id"])
+            secure_id = create_pass_for_booking(booking).secure_pass_id
+
+        payloads, payload_patch = self._record_payloads()
+        with payload_patch, patch("qrcode.image.pil.Image", None):
+            generate_qr_code_base64(secure_id)
+
+        assert payloads == [secure_id]
+
+    def test_qr_decodes_back_to_the_secure_pass_id_on_both_backends(
+        self, app, pass_setup
+    ):
+        """E. A real decoder reads back exactly the secure_pass_id."""
+        import base64
+        import io
+
+        Image = pytest.importorskip("PIL.Image")
+        pyzbar = pytest.importorskip("pyzbar.pyzbar")
+
+        import qrcode.image.pil
+
+        from app.services.smart_queue_pass_service import (
+            create_pass_for_booking,
+            generate_qr_code_base64,
+        )
+
+        with app.app_context():
+            booking = db.session.get(Booking, pass_setup["booking_a1_id"])
+            secure_id = create_pass_for_booking(booking).secure_pass_id
+
+        pillow_available = qrcode.image.pil.Image
+        decoded_payloads = []
+        for no_pillow in (False, True):
+            with patch.object(
+                qrcode.image.pil, "Image", None if no_pillow else pillow_available
+            ):
+                qr_base64 = generate_qr_code_base64(secure_id)
+
+            png_bytes = base64.b64decode(qr_base64)
+            self._png_size(png_bytes)
+            decoded = pyzbar.decode(Image.open(io.BytesIO(png_bytes)))
+            assert len(decoded) == 1
+            decoded_payloads.append(decoded[0].data.decode("utf-8"))
+
+        assert decoded_payloads == [secure_id, secure_id]
+
+    def test_qr_never_carries_sensitive_data(self, app, pass_setup):
+        """F. No phone/token/booking id/identity/JWT/bank data enters the QR."""
+        import base64
+
+        from app.services.smart_queue_pass_service import (
+            create_pass_for_booking,
+            generate_qr_code_base64,
+        )
+
+        with app.app_context():
+            booking = db.session.get(Booking, pass_setup["booking_a1_id"])
+            secure_id = create_pass_for_booking(booking).secure_pass_id
+
+        payloads, payload_patch = self._record_payloads()
+        with payload_patch, patch("qrcode.image.pil.Image", None):
+            qr_base64 = generate_qr_code_base64(secure_id)
+
+        # Exactly one payload - and it is the non-secret pass identifier.
+        assert payloads == [secure_id]
+        payload = payloads[0]
+        assert payload == secure_id
+        assert payload.startswith("kp_pass_")
+        assert len(payload) > 20
+        assert not payload.removeprefix("kp_pass_").isdigit()
+
+        # It is never an internal identifier or the queue token.
+        assert payload != str(pass_setup["booking_a1_id"])
+        assert payload != str(pass_setup["farmer1_user_id"])
+        assert payload != pass_setup["farmer1_sub"]
+
+        secrets = (
+            "9876500101",          # farmer phone number
+            "K-0001",              # queue token number
+            "Pass Farmer One",     # farmer name
+            "Pass Test Centre A",  # centre name
+            "Ludhiana",            # centre location
+            "user-pass-farmer1",   # Supabase subject (farmer identity)
+            "eyJ",                 # JWT header prefix
+            "IFSC",
+            "bank_account",
+            "password",
+        )
+        png_bytes = base64.b64decode(qr_base64)
+        for secret in secrets:
+            assert secret not in payload
+            assert secret.encode("utf-8") not in png_bytes
+
+    # --- the reported production failure: display endpoint ------------------
+
+    def test_display_endpoint_returns_a_png_qr_without_pillow(
+        self, app, client, pass_setup
+    ):
+        """G. Regression: the display API no longer answers HTTP 500."""
+        import base64
+
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        with patch("qrcode.image.pil.Image", None):
+            res = make_call(
+                client, "GET",
+                f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+                pass_setup["farmer1_sub"],
+            )
+
+        assert res.status_code == 200
+        pass_data = res.get_json()["pass_data"]
+        assert pass_data["pass_id"] == secure_id
+        qr_base64 = pass_data["qr_code_base64"]
+        assert isinstance(qr_base64, str)
+        assert len(qr_base64) > 100
+        assert base64.b64decode(qr_base64).startswith(b"\x89PNG\r\n\x1a\n")
+
+    def test_display_endpoint_works_with_the_pillow_backend(
+        self, app, client, pass_setup
+    ):
+        """H. The same endpoint with Pillow present (the standard install)."""
+        import base64
+
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+
+        res = make_call(
+            client, "GET",
+            f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer1_sub"],
+        )
+
+        assert res.status_code == 200
+        pass_data = res.get_json()["pass_data"]
+        assert pass_data["pass_id"] == secure_id
+        self._png_size(base64.b64decode(pass_data["qr_code_base64"]))
+
+    def test_farmer_ownership_of_the_qr_pass_remains_intact(
+        self, app, client, pass_setup
+    ):
+        """I. Farmer ownership rules around the QR pass are unchanged."""
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+        create_pass_directly(app, pass_setup["booking_b1_id"])
+
+        # 1. Plain browser navigation (no Bearer header) still cannot read it.
+        anon = client.get(f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display")
+        assert anon.status_code == 401
+
+        # 2. The owner receives the QR of their own booking.
+        owner = make_call(
+            client, "GET",
+            f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer1_sub"],
+        )
+        assert owner.status_code == 200
+        assert owner.get_json()["pass_data"]["pass_id"] == secure_id
+
+        # 3. Another farmer's booking id discloses neither pass nor QR data.
+        foreign = make_call(
+            client, "GET",
+            f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+            pass_setup["farmer2_sub"],
+        )
+        assert foreign.status_code == 404
+        assert "pass_data" not in foreign.get_json()
+        assert secure_id not in foreign.get_data(as_text=True)
+
+        # 4. ... while farmer 2 still reaches their own pass.
+        own = make_call(
+            client, "GET",
+            f"/api/queue-pass/my/{pass_setup['booking_b1_id']}/display",
+            pass_setup["farmer2_sub"],
+        )
+        assert own.status_code == 200
+        assert own.get_json()["pass_data"]["pass_id"].startswith("kp_pass_")
+
+    def test_stage1_security_and_qr_payload_survive_verification(
+        self, app, client, pass_setup
+    ):
+        """J. Stage 1 rules hold and verification never changes the payload."""
+        secure_id = create_pass_directly(app, pass_setup["booking_a1_id"])
+        payloads, payload_patch = self._record_payloads()
+
+        with payload_patch:
+            before = make_call(
+                client, "GET",
+                f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+                pass_setup["farmer1_sub"],
+            )
+            assert before.status_code == 200
+
+            verified = make_call(
+                client, "POST", "/api/queue-pass/verify",
+                pass_setup["staff_a_sub"], {"pass_id": secure_id},
+            )
+            assert verified.status_code == 200
+            assert verified.get_json()["smart_queue_pass"]["status"] == "VERIFIED"
+
+            after = make_call(
+                client, "GET",
+                f"/api/queue-pass/my/{pass_setup['booking_a1_id']}/display",
+                pass_setup["farmer1_sub"],
+            )
+            assert after.status_code == 200
+
+        # Both renditions encoded exactly the same, non-secret payload.
+        assert payloads == [secure_id, secure_id]
+        assert after.get_json()["pass_data"]["pass_status"] == "VERIFIED"
+
+        # Stage 1 centre isolation and role rules are untouched.
+        assert make_call(
+            client, "GET", f"/api/queue-pass/lookup/{secure_id}",
+            pass_setup["staff_a_sub"],
+        ).status_code == 200
+        assert make_call(
+            client, "GET", f"/api/queue-pass/lookup/{secure_id}",
+            pass_setup["staff_b_sub"],
+        ).status_code == 403
+        assert make_call(
+            client, "GET", f"/api/queue-pass/lookup/{secure_id}",
+            pass_setup["staff_none_sub"],
+        ).status_code == 403
+        assert make_call(
+            client, "POST", "/api/queue-pass/verify",
+            pass_setup["farmer1_sub"], {"pass_id": secure_id},
+        ).status_code == 403
+
+
 class TestStage2FarmerPassDisplay:
     """Stage 2: Verify farmer pass display endpoint and UI."""
 

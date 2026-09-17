@@ -558,9 +558,18 @@ def generate_qr_code_base64(secure_pass_id: str) -> str:
     # Create the QR code image
     img = qr.make_image(fill_color="black", back_color="white")
 
-    # Save to bytes buffer
+    # Save to bytes buffer.
+    #
+    # The format is intentionally NOT passed: qrcode picks the best available
+    # backend at runtime. With Pillow it returns a ``PilImage`` (whose
+    # ``save(stream, format=None)`` defaults to PNG) and without Pillow it falls
+    # back to the pure-python ``PyPNGImage``, whose signature is
+    # ``save(stream, kind=None)`` and which always writes PNG. Passing
+    # ``format="PNG"`` raises
+    # ``TypeError: PyPNGImage.save() got an unexpected keyword argument 'format'``
+    # on the fallback backend and turned the display endpoint into HTTP 500.
     buffer = io.BytesIO()
-    img.save(buffer, format="PNG")
+    img.save(buffer)
     buffer.seek(0)
 
     # Encode as base64

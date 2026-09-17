@@ -52,7 +52,13 @@ gunicorn>=22.0,<24
 # --- QR Code Generation (Stage 2) -------------------------------------------
 # Lightweight QR code generation for Smart Queue Pass.
 # Only used to generate QR images from secure_pass_id.
-qrcode>=7.4,<8
+#
+# The [pil] extra installs Pillow so qrcode uses its PilImage backend. Rendering
+# must stay backend-agnostic - `img.save(buffer)`, never
+# `img.save(buffer, format="PNG")` - because qrcode silently falls back to the
+# pure-python PyPNGImage backend (whose save() takes no `format` keyword)
+# whenever Pillow is unavailable.
+qrcode[pil]>=7.4,<8
 
 # --- Testing ---------------------------------------------------------------------
 pytest>=8.0,<9
