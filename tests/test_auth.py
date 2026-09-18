@@ -416,6 +416,105 @@ class TestLogin:
         assert "disabled" in resp.get_json()["error"].lower() or "disabled" in resp.get_json()["message"].lower()
 
 
+class TestLoginRoleMismatch:
+    """Backend role enforcement on POST /api/auth/login.
+
+    The role selected on the login tabs must match the authenticated
+    account's actual database role. A mismatch is rejected with a safe
+    message and must never deliver a session/JWT.
+    """
+
+    def _seed_user(self, app, role, supabase_id, email):
+        with app.app_context():
+            u = User(supabase_user_id=supabase_id, role=role, is_active=True)
+            db.session.add(u)
+            db.session.commit()
+
+    def _login(self, client, mock_supabase, email, role, supabase_id, password="password123"):
+        su = make_mock_supabase_user(user_id=supabase_id, email=email)
+        mock_supabase.auth.sign_in_with_password.return_value = make_mock_auth_response(
+            su, make_mock_session("access-tok-matching", "refresh-tok-matching")
+        )
+        return client.post("/api/auth/login", json={
+            "email": email, "password": password, "role": role,
+        })
+
+    # --- 1-3: selected role == account role => ALLOW ---------------------------
+    @pytest.mark.parametrize("selected,account_role,account_id", [
+        pytest.param("ADMIN", UserRole.ADMIN, "match-admin", id="admin_selected_admin_credentials"),
+        pytest.param("STAFF", UserRole.STAFF, "match-staff", id="staff_selected_staff_credentials"),
+        pytest.param("FARMER", UserRole.FARMER, "match-farmer", id="farmer_selected_farmer_credentials"),
+    ])
+    def test_matching_role_allows_login(self, app, client, mock_supabase, selected, account_role, account_id):
+        email = f"{account_id}@example.com"
+        self._seed_user(app, account_role, account_id, email)
+        resp = self._login(client, mock_supabase, email, selected, account_id)
+        assert resp.status_code == 200
+        body = resp.get_json()
+        assert body["user"]["role"] == account_role
+        assert body["user"]["access_token"] == "access-tok-matching"
+        assert body["user"]["refresh_token"] == "refresh-tok-matching"
+
+    # --- 4-9: selected role != account role => REJECT without a JWT -----------
+    @pytest.mark.parametrize("selected,account_role,account_id", [
+        pytest.param("ADMIN", UserRole.FARMER, "admin-selected-farmer", id="admin_selected_farmer_credentials"),
+        pytest.param("ADMIN", UserRole.STAFF, "admin-selected-staff", id="admin_selected_staff_credentials"),
+        pytest.param("STAFF", UserRole.FARMER, "staff-selected-farmer", id="staff_selected_farmer_credentials"),
+        pytest.param("STAFF", UserRole.ADMIN, "staff-selected-admin", id="staff_selected_admin_credentials"),
+        pytest.param("FARMER", UserRole.ADMIN, "farmer-selected-admin", id="farmer_selected_admin_credentials"),
+        pytest.param("FARMER", UserRole.STAFF, "farmer-selected-staff", id="farmer_selected_staff_credentials"),
+    ])
+    def test_mismatched_role_rejected_without_session(
+        self, app, client, mock_supabase, selected, account_role, account_id
+    ):
+        email = f"{account_id}@example.com"
+        self._seed_user(app, account_role, account_id, email)
+        resp = self._login(client, mock_supabase, email, selected, account_id)
+        assert resp.status_code == 403
+        body = resp.get_json()
+        assert body["error"] == "Role mismatch"
+        assert body["message"] == "Selected role does not match this account."
+        # No session/JWT is returned or embedded anywhere in the response.
+        assert "access_token" not in resp.get_data(as_text=True)
+        assert "refresh_token" not in resp.get_data(as_text=True)
+        assert "user" not in body
+
+    # --- role normalization ----------------------------------------------------
+    def test_lowercase_and_padded_role_normalized(self, app, client, mock_supabase):
+        """' farmer ' / 'Staff' must normalize and still match the real role."""
+        for selected, account_role, account_id in [
+            (" farmer ", UserRole.FARMER, "norm-farmer"),
+            ("Staff", UserRole.STAFF, "norm-staff"),
+            ("  ADMIN  ", UserRole.ADMIN, "norm-admin"),
+        ]:
+            email = f"{account_id}@example.com"
+            self._seed_user(app, account_role, account_id, email)
+            resp = self._login(client, mock_supabase, email, selected, account_id)
+            assert resp.status_code == 200, selected
+
+    def test_unknown_role_value_rejected(self, app, client, mock_supabase):
+        """A role value that no real account can hold must never log in."""
+        email = "unknown-role@example.com"
+        self._seed_user(app, UserRole.FARMER, "unknown-role", email)
+        resp = self._login(client, mock_supabase, email, "GOD", "unknown-role")
+        assert resp.status_code == 403
+        assert resp.get_json()["message"] == "Selected role does not match this account."
+
+    def test_login_without_role_keeps_legacy_behavior(self, app, client, mock_supabase):
+        """Legacy clients (and the standalone /login form) send no role and
+        must keep working - they are redirected by the account's real role."""
+        email = "legacy@example.com"
+        self._seed_user(app, UserRole.FARMER, "legacy-role", email)
+        su = make_mock_supabase_user(user_id="legacy-role", email=email)
+        mock_supabase.auth.sign_in_with_password.return_value = make_mock_auth_response(
+            su, make_mock_session("access-legacy", "refresh-legacy")
+        )
+        resp = client.post("/api/auth/login", json={"email": email, "password": "password123"})
+        assert resp.status_code == 200
+        assert resp.get_json()["user"]["access_token"] == "access-legacy"
+        assert resp.get_json()["user"]["role"] == UserRole.FARMER
+
+
 class TestSupabaseConfigErrors:
     """Configuration failures must return HTTP 503 (not 400/401 machinery)."""
 

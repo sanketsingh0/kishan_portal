@@ -22,3 +22,16 @@ staff_bp = Blueprint("staff", __name__, url_prefix="/staff")
 def staff_dashboard():
     """Serve the public staff dashboard HTML shell (no staff data embedded)."""
     return render_template("staff_dashboard.html")
+
+
+@staff_bp.get("/scan")
+def staff_scan():
+    """Serve the dedicated full-screen mobile scanner shell.
+
+    Separate dashboard optimised for phones: full-viewport camera preview,
+    rear-camera default, torch + camera-flip controls, manual pass-id entry
+    and upload fallback. Like /staff/dashboard it embeds NO staff/centre
+    data - everything loads via window.KP.authFetch() so STAFF/ADMIN auth
+    and centre isolation stay enforced by the JSON APIs.
+    """
+    return render_template("staff_scan.html")

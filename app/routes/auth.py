@@ -106,6 +106,22 @@ def _get_user_role(supabase_user_id):
     return local_user.role if local_user else UserRole.FARMER
 
 
+def _normalize_login_role(value) -> str | None:
+    """Normalize the client-supplied login role for the strict role check.
+
+    Returns ``None`` when the client did not send a role (legacy clients and
+    the standalone /login form simply log in and are redirected based on the
+    account's real role). Any other value is stripped and uppercased so it can
+    be compared deterministically against ``UserRole`` values. The frontend
+    role is never trusted on its own - it is only compared against the
+    authenticated account's authoritative database role.
+    """
+    if value is None:
+        return None
+    text = str(value).strip().upper()
+    return text or None
+
+
 @auth_bp.route("/register", methods=["POST"])
 def register():
     """Register a new farmer.
@@ -224,6 +240,19 @@ def login():
             "error": "Authentication failed",
             "message": "Could not authenticate.",
         }), 401
+
+    # Backend role enforcement: the role selected on the login screen must
+    # match the authenticated account's actual role from the authoritative
+    # local User record. A mismatch is rejected without returning any
+    # access/refresh token so no app session/JWT is established.
+    selected_role = _normalize_login_role(data.get("role"))
+    if selected_role is not None:
+        actual_role = _get_user_role(supabase_user.id)
+        if selected_role != actual_role:
+            return jsonify({
+                "error": "Role mismatch",
+                "message": "Selected role does not match this account.",
+            }), 403
 
     return jsonify({
         "message": "Login successful",

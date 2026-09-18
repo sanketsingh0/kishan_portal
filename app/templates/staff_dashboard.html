@@ -56,6 +56,30 @@
       padding: 2rem;
       text-align: center;
     }
+    /* ---- Scanner preview fix: camera opens but video was invisible ----
+       The injected <video> needs explicit size + object-fit, otherwise the
+       viewport collapses to 0px (blank/grey box) especially on mobiles. */
+    #scannerViewport {
+      width: 100% !important;
+      min-height: 300px;
+      background: #000;
+      overflow: hidden;
+      position: relative;
+    }
+    #scannerViewport video {
+      width: 100% !important;
+      height: auto !important;
+      min-height: 300px;
+      max-height: 60vh;
+      object-fit: cover !important;
+      display: block !important;
+      background: #000;
+      border-radius: 8px;
+    }
+    #scannerViewport canvas { display: none; }
+    @media (max-width: 576px) {
+      #scannerViewport video { max-height: 55vh; }
+    }
   </style>
 </head>
 <body>
@@ -159,27 +183,34 @@
 
       <!-- Smart Queue Pass Scanner -->
       <div class="card-custom p-4 mb-4" id="scannerSection">
-        <div class="d-flex justify-content-between align-items-center mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-3 flex-wrap gap-2">
           <h5 class="fw-bold mb-0"><i class="fa-solid fa-qrcode me-2 text-primary"></i>Smart Queue Pass Scanner</h5>
-          <button class="btn btn-sm btn-outline-primary" id="scanBtn" onclick="startScanner()">
-            <i class="fa-solid fa-camera me-1"></i>Scan Queue Pass
-          </button>
+          <div class="d-flex gap-2">
+            <a href="/staff/scan" class="btn btn-sm btn-success"><i class="fa-solid fa-mobile-screen me-1"></i>Full-Screen Mobile Scan</a>
+            <button class="btn btn-sm btn-outline-primary" id="scanBtn" onclick="startScanner()">
+              <i class="fa-solid fa-camera me-1"></i>Scan Queue Pass
+            </button>
+          </div>
         </div>
         <div class="alert alert-info py-2">
           <small class="text-info">
             <i class="fa-solid fa-circle-info me-1"></i>
             Scan a farmer's Smart Queue Pass QR code to verify mandi entry.
-            <br><small>Camera access required. Scanner stops after successful scan.</small>
+            <br><small>Camera access required. Scanner stops after successful scan. On phones use <a href="/staff/scan" class="alert-link">Full-Screen Mobile Scan</a> for best view.</small>
           </small>
         </div>
         <div id="scannerContainer" class="d-none">
-          <div class="border rounded-3 p-3 bg-light text-center" style="min-height: 300px; display: flex; align-items: center; justify-content: center;">
-            <div id="scannerViewport" class="rounded" style="max-width: 100%;"></div>
+          <div class="border rounded-3 p-2 bg-dark text-center">
+            <div id="scannerViewport" class="rounded" style="width:100%;"></div>
           </div>
-          <div class="mt-3 text-center">
+          <div class="mt-3 text-center d-flex gap-2 justify-content-center flex-wrap">
             <button class="btn btn-sm btn-outline-danger" id="stopScanBtn" onclick="stopScanner()">
               <i class="fa-solid fa-stop me-1"></i>Stop Scanning
             </button>
+            <a href="/staff/scan" class="btn btn-sm btn-outline-success"><i class="fa-solid fa-expand me-1"></i>Open Full Screen</a>
+          </div>
+          <div class="mt-2 text-center">
+            <label class="btn btn-sm btn-outline-secondary mb-0">Upload QR instead <input id="dashFileInput" type="file" accept="image/*" hidden></label>
           </div>
         </div>
         <div id="scanResult" class="d-none mt-3"></div>
@@ -708,7 +739,16 @@
       });
     }
 
+    function dashQrBox() {
+      // Responsive: fixed 250px overflows small phones -> blank/crop.
+      const w = Math.min(window.innerWidth || 360, 640);
+      const s = Math.max(180, Math.min(280, Math.floor(w * 0.62)));
+      return { width: s, height: s };
+    }
+
     async function resolveCameraConfig() {
+      // Prefer explicit rear camera when labels are available (needs prior
+      // permission on some mobiles), else fall back to facingMode chain.
       try {
         if (typeof Html5Qrcode !== 'undefined' && typeof Html5Qrcode.getCameras === 'function') {
           const cameras = await Html5Qrcode.getCameras();
@@ -776,23 +816,48 @@
       };
       const onScanFailure = () => { /* ignore per-frame misses */ };
       try {
-        html5QrcodeScanner = new Html5Qrcode('scannerViewport');
-        const scanConfig = { fps: 10, qrbox: { width: 250, height: 250 }, aspectRatio: 1.0 };
+        // Verbose off + BarCodeDetector where supported (faster on mobiles).
+        html5QrcodeScanner = new Html5Qrcode('scannerViewport', { verbose: false });
+        const scanConfig = { fps: 12, qrbox: dashQrBox(), aspectRatio: 1.0, disableFlip: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
         const cameraConfig = await resolveCameraConfig();
         try {
           await html5QrcodeScanner.start(cameraConfig, scanConfig, onScanSuccess, onScanFailure);
         } catch (firstErr) {
-          const fn = (firstErr && firstErr.name) || '';
-          const fm = (firstErr && firstErr.message) || '';
-          const over = (fn === 'OverconstrainedError' || fn === 'OverConstrainedError' || /overconstrain/i.test(fm));
-          const triedSpecific = (typeof cameraConfig === 'string') || (cameraConfig && (cameraConfig.deviceId || cameraConfig.facingMode === 'environment'));
-          if (over && triedSpecific) {
-            console.error('Scanner error:', fn, fm, firstErr);
-            await html5QrcodeScanner.start({ facingMode: 'user' }, scanConfig, onScanSuccess, onScanFailure);
-          } else { throw firstErr; }
+          // Mobile chain: exact rear -> ideal rear -> front. Old code only
+          // retried on OverconstrainedError, so NotFound/NotReadable phones
+          // showed a live permission dot but no video.
+          console.error('Scanner error:', firstErr && firstErr.name, firstErr && firstErr.message, firstErr);
+          let started = false;
+          try { await html5QrcodeScanner.start({ facingMode: { exact: 'environment' } }, scanConfig, onScanSuccess, onScanFailure); started = true; }
+          catch (e2) {
+            try { await html5QrcodeScanner.start({ facingMode: 'environment' }, scanConfig, onScanSuccess, onScanFailure); started = true; }
+            catch (e3) {
+              console.error('Scanner error:', e3 && e3.name, e3 && e3.message, e3);
+              await html5QrcodeScanner.start({ facingMode: 'user' }, scanConfig, onScanSuccess, onScanFailure); started = true;
+            }
+          }
+          if (!started) { throw firstErr; }
         }
         isScanning = true;
         showScanResult('info', 'Camera started. Point QR code at the camera...', 'fa-camera');
+        // Upload-QR fallback wiring (for denied/busy camera or desktops).
+        const dashFile = document.getElementById('dashFileInput');
+        if (dashFile && !dashFile.dataset.bound) {
+          dashFile.dataset.bound = '1';
+          dashFile.addEventListener('change', async (ev) => {
+            const f = ev.target.files && ev.target.files[0];
+            if (!f) return;
+            try {
+              await ensureHtml5QrcodeLoaded();
+              const tmp = new Html5Qrcode('scannerViewport');
+              const text = await tmp.scanFile(f, true);
+              try { await tmp.clear(); } catch (_) {}
+              await stopScanner();
+              await verifyQueuePass((text || '').trim());
+            } catch (e) { showScanResult('danger', 'Could not read QR from that image. Try a clearer photo.', 'fa-triangle-exclamation'); }
+            ev.target.value = '';
+          });
+        }
       } catch (err) {
         console.error('Scanner error:', err && err.name, err && err.message, err);
         isScanning = false;
