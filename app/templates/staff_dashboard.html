@@ -210,7 +210,7 @@
         </div>
         <div id="scannerContainer" class="d-none">
           <div class="border rounded-3 p-2 bg-dark text-center">
-            <!-- Native preview = guaranteed visible. Library decodes frames. -->
+            <!-- Visible single-stream preview. #scannerViewport stays hidden and is decoder-only (scanFile); it never owns a live camera stream. -->
             <video id="dashPreview" playsinline muted autoplay></video>
             <div id="scannerViewport" class="rounded d-none" style="width:100%;"></div>
           </div>
@@ -750,58 +750,101 @@
       });
     }
 
-    function dashQrBox() {
-      // Responsive: fixed 250px overflows small phones -> blank/crop.
-      const w = Math.min(window.innerWidth || 360, 640);
-      const s = Math.max(180, Math.min(280, Math.floor(w * 0.62)));
-      return { width: s, height: s };
-    }
-
-    async function resolveCameraConfig() {
-      // Prefer explicit rear camera when labels are available (needs prior
-      // permission on some mobiles), else fall back to facingMode chain.
-      try {
-        if (typeof Html5Qrcode !== 'undefined' && typeof Html5Qrcode.getCameras === 'function') {
-          const cameras = await Html5Qrcode.getCameras();
-          if (cameras && cameras.length) {
-            const rear = cameras.find((c) => /back|rear|environment/i.test(c.label || ''));
-            if (rear) { return rear.id; }
-            if (cameras.length === 1) { return cameras[0].id; }
-          }
-        }
-      } catch (err) {
-        console.error('Scanner error:', err && err.name, err && err.message, err);
-      }
-      return { facingMode: 'environment' };
-    }
+    let dashStream = null, dashDecodeTimer = null, dashDetector = null;
 
     function getCameraErrorMessage(err) {
       const name = (err && err.name) || '';
       const message = (err && err.message) || '';
-      if (name === 'NotAllowedError' || name === 'SecurityError') {
-        return 'Camera permission denied. Please allow camera permission and try again.';
+      if (name === 'NotAllowedError') {
+        return 'Camera permission denied. Allow camera access and try again.';
       }
       if (name === 'NotFoundError' || name === 'DevicesNotFoundError') {
-        return 'No camera found on this device.';
-      }
-      if (name === 'OverconstrainedError' || name === 'OverConstrainedError' || /overconstrain/i.test(message)) {
-        return 'Requested camera is unavailable on this device. Retried with a fallback camera and it is still unavailable.';
+        return 'No camera was found on this device.';
       }
       if (name === 'NotReadableError' || name === 'TrackStartError') {
-        return 'Camera is already in use by another application. Please close it and try again.';
+        return 'Camera is busy or being used by another application.';
       }
-      if (message) { return 'Failed to start camera (' + name + ': ' + message + ').'; }
-      return 'Failed to start camera. Please check the camera and try again.';
+      if (name === 'OverconstrainedError' || name === 'OverConstrainedError' || /overconstrain/i.test(message)) {
+        return 'Requested camera is unavailable on this device.';
+      }
+      if (name === 'SecurityError' || /secure|https|getUserMedia unavailable|not supported/i.test(message + ' ' + name)) {
+        return 'Camera requires HTTPS or localhost. Please open this page over a secure connection.';
+      }
+      if (name === 'PreviewPlaybackError' || /preview could not start/i.test(message)) {
+        return 'Camera opened but the video preview could not start.';
+      }
+      return 'Could not start the camera. Please check the camera and try again.';
     }
 
-    let dashStream = null, dashDecodeTimer = null;
+    function isOverconstrainedError(err) {
+      const name = (err && err.name) || '';
+      const message = (err && err.message) || '';
+      return name === 'OverconstrainedError' || name === 'OverConstrainedError' || /overconstrain/i.test(message);
+    }
 
+    // SINGLE-STREAM: exactly one getUserMedia path for the dashboard.
+    // Order: rear/environment (ideal 720p) -> basic rear -> any camera.
+    // OverconstrainedError retries once with generic { video: true }.
     async function openDashCamera() {
-      try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } }); }
-      catch (e1) {
-        try { return await navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: 'environment' } }); }
-        catch (e2) { return await navigator.mediaDevices.getUserMedia({ audio: false, video: true }); }
+      const attempts = [
+        { audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1280 }, height: { ideal: 720 } } },
+        { audio: false, video: { facingMode: 'environment' } },
+        { audio: false, video: true }
+      ];
+      let lastErr = null;
+      for (let i = 0; i < attempts.length; i++) {
+        try {
+          return await navigator.mediaDevices.getUserMedia(attempts[i]);
+        } catch (err) {
+          lastErr = err;
+          const fatal = err && (err.name === 'NotAllowedError' || err.name === 'NotFoundError' || err.name === 'DevicesNotFoundError' || err.name === 'NotReadableError' || err.name === 'TrackStartError' || err.name === 'SecurityError');
+          if (fatal && !isOverconstrainedError(err)) { throw err; }
+          // Otherwise (OverconstrainedError or unknown): try next fallback.
+        }
       }
+      throw lastErr || new Error('getUserMedia failed');
+    }
+
+    function waitForDashPreviewReady(pv, timeoutMs) {
+      // Prefer loadedmetadata/playing events, with polling fallback.
+      return new Promise((resolve, reject) => {
+        const deadline = Date.now() + (timeoutMs || 8000);
+        let done = false;
+        const cleanup = () => {
+          pv.removeEventListener('loadedmetadata', onReady);
+          pv.removeEventListener('playing', onReady);
+        };
+        const onReady = () => { check(); };
+        const check = () => {
+          if (done) return;
+          try {
+            if (pv.readyState >= 2 && pv.videoWidth > 0 && pv.videoHeight > 0 && pv.paused === false) {
+              done = true; cleanup(); resolve();
+            } else if (Date.now() >= deadline) {
+              done = true; cleanup(); reject(new Error('Preview readiness timeout'));
+            }
+          } catch (e) {
+            if (Date.now() >= deadline) { done = true; cleanup(); reject(e); }
+          }
+        };
+        pv.addEventListener('loadedmetadata', onReady);
+        pv.addEventListener('playing', onReady);
+        const poll = setInterval(() => {
+          check();
+          if (done) { clearInterval(poll); }
+          else if (Date.now() >= deadline) { clearInterval(poll); check(); }
+        }, 150);
+        check();
+      });
+    }
+
+    function cleanupDashStream() {
+      if (dashStream) {
+        try { dashStream.getTracks().forEach((t) => { try { t.stop(); } catch (e) {} }); } catch (e) {}
+        dashStream = null;
+      }
+      const pv = document.getElementById('dashPreview');
+      if (pv) { try { pv.srcObject = null; } catch (e) {} }
     }
 
     async function startScanner() {
@@ -832,37 +875,54 @@
         return;
       }
       const onScanSuccess = async (decodedText) => {
+        const text = (decodedText || '').trim();
+        if (!text) return;
         await stopScanner();
-        await verifyQueuePass(decodedText);
+        await verifyQueuePass(text);
       };
-      const onScanFailure = () => { /* ignore per-frame misses */ };
       try {
-        // 1) Native preview FIRST - this is what you SEE (never blank if live).
-        // Your screenshot = library video never rendered; native <video> fixes it.
+        // SINGLE-STREAM: one getUserMedia -> dashStream -> visible #dashPreview.
+        // Html5Qrcode.start() / getCameras() are NEVER used on this live path.
         showScanResult('info', 'Requesting camera... tap Allow if asked.', 'fa-camera');
         dashStream = await openDashCamera();
         const pv = document.getElementById('dashPreview');
-        pv.srcObject = dashStream; pv.muted = true;
-        try { await pv.play(); } catch (e) {}
-        // 2) Decode. Verbose off + BarCodeDetector where supported.
-        html5QrcodeScanner = new Html5Qrcode('scannerViewport', { verbose: false });
-        const scanConfig = { fps: 12, qrbox: dashQrBox(), aspectRatio: 1.0, disableFlip: false, experimentalFeatures: { useBarCodeDetectorIfSupported: true } };
-        // Reuse the SAME live track: no second camera open, no grey box.
-        let libStarted = false;
+        pv.srcObject = dashStream;
+        pv.autoplay = true;
+        pv.playsInline = true;
+        pv.muted = true;
         try {
-          const track = dashStream.getVideoTracks()[0];
-          try { await html5QrcodeScanner.start(track, scanConfig, onScanSuccess, onScanFailure); libStarted = true; }
-          catch (eA) {
-            const cameraConfig = await resolveCameraConfig();
-            await html5QrcodeScanner.start(cameraConfig, scanConfig, onScanSuccess, onScanFailure);
-            libStarted = true;
-          }
-        } catch (firstErr) {
-          console.error('Scanner error:', firstErr && firstErr.name, firstErr && firstErr.message, firstErr);
-          // Fallback: preview stays LIVE + decode snapshots in background.
-          startDashSnapshotDecode(onScanSuccess);
-          libStarted = false;
+          await pv.play();
+        } catch (playErr) {
+          console.error('Scanner error:', playErr && playErr.name, playErr && playErr.message, playErr);
+          cleanupDashStream();
+          isScanning = false;
+          showScanResult('danger', 'Camera opened but the video preview could not start.', 'fa-camera');
+          scanBtn.classList.remove('d-none');
+          scannerContainer.classList.add('d-none');
+          return;
         }
+        try {
+          await waitForDashPreviewReady(pv, 8000);
+        } catch (readyErr) {
+          console.error('Scanner error:', readyErr && readyErr.name, readyErr && readyErr.message, readyErr);
+          cleanupDashStream();
+          isScanning = false;
+          showScanResult('danger', 'Camera opened but the video preview could not start.', 'fa-camera');
+          scanBtn.classList.remove('d-none');
+          scannerContainer.classList.add('d-none');
+          return;
+        }
+        const track = (dashStream.getVideoTracks && dashStream.getVideoTracks()[0]) || null;
+        console.info('Camera preview ready', {
+          videoWidth: pv.videoWidth,
+          videoHeight: pv.videoHeight,
+          readyState: pv.readyState,
+          paused: pv.paused,
+          trackReadyState: track ? track.readyState : null,
+          trackMuted: track ? track.muted : null
+        });
+        // Decode frames from THAT SAME visible video (~400ms snapshots).
+        startDashPreviewDecode(onScanSuccess);
         isScanning = true;
         showScanResult('info', 'Camera started. Point QR code at the camera...', 'fa-camera');
         // Upload-QR fallback wiring (for denied/busy camera or desktops).
@@ -885,59 +945,99 @@
         }
       } catch (err) {
         console.error('Scanner error:', err && err.name, err && err.message, err);
-        isScanning = false;
+        cleanupDashStream();
+        if (dashDecodeTimer) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; }
+        dashDetector = null;
         if (html5QrcodeScanner) {
           try { await html5QrcodeScanner.clear(); } catch (e2) { console.error('Scanner error:', e2 && e2.name, e2 && e2.message, e2); }
           html5QrcodeScanner = null;
         }
-        showScanResult('danger', getCameraErrorMessage(err), 'fa-camera');
+        isScanning = false;
+        if (isOverconstrainedError(err)) {
+          showScanResult('danger', 'Requested camera is unavailable on this device.', 'fa-camera');
+        } else {
+          showScanResult('danger', getCameraErrorMessage(err), 'fa-camera');
+        }
         scanBtn.classList.remove('d-none');
         scannerContainer.classList.add('d-none');
       }
     }
 
-    function startDashSnapshotDecode(onScanSuccess) {
-      if (dashDecodeTimer) { clearInterval(dashDecodeTimer); }
-      let det = null;
-      try { det = ('BarcodeDetector' in window) ? new BarcodeDetector({ formats: ['qr_code'] }) : null; } catch (e) {}
+    // SINGLE-STREAM decoder: reads frames from the SAME visible #dashPreview.
+    // Preferred: BarcodeDetector. Fallback: canvas snapshot -> Blob ->
+    // Html5Qrcode.scanFile() (decode-only; NEVER Html5Qrcode.start(), no camera).
+    function startDashPreviewDecode(onScanSuccess) {
+      if (dashDecodeTimer) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; }
+      dashDetector = null;
+      try {
+        dashDetector = ('BarcodeDetector' in window) ? new BarcodeDetector({ formats: ['qr_code'] }) : null;
+      } catch (e) { dashDetector = null; }
       let busy = false;
+      const snapshotCanvas = document.createElement('canvas');
       dashDecodeTimer = setInterval(async () => {
         const v = document.getElementById('dashPreview');
-        if (!v || !v.videoWidth || busy) return;
+        if (!v || !dashStream || busy) return;
+        if (!(v.videoWidth > 0 && v.videoHeight > 0)) return;
+        if (v.readyState < 2 || v.paused) return;
         busy = true;
         try {
-          if (det) {
-            const codes = await det.detect(v);
-            if (codes && codes.length && codes[0].rawValue) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; await onScanSuccess(codes[0].rawValue); return; }
+          if (dashDetector) {
+            const codes = await dashDetector.detect(v);
+            if (codes && codes.length && codes[0].rawValue) {
+              const text = (codes[0].rawValue || '').trim();
+              if (text) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; busy = false; await onScanSuccess(text); return; }
+            }
           } else {
-            const tmp = new Html5Qrcode('scannerViewport', { verbose: false });
-            const c = document.createElement('canvas');
+            // Fallback needs the decoder library only for still-image decode.
+            await ensureHtml5QrcodeLoaded();
             const w = v.videoWidth, h = v.videoHeight, s = Math.floor(Math.min(w, h) * 0.7);
-            c.width = s; c.height = s;
-            c.getContext('2d').drawImage(v, (w - s) / 2, (h - s) / 2, s, s, 0, 0, s, s);
-            const blob = await (await fetch(c.toDataURL('image/png'))).blob();
-            try { const t = await tmp.scanFile(blob, true); if (t) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; await onScanSuccess(t); return; } } catch (e) {}
-            try { await tmp.clear(); } catch (e) {}
+            snapshotCanvas.width = s; snapshotCanvas.height = s;
+            snapshotCanvas.getContext('2d').drawImage(v, (w - s) / 2, (h - s) / 2, s, s, 0, 0, s, s);
+            const blob = await new Promise((resolve) => snapshotCanvas.toBlob(resolve, 'image/png'));
+            if (blob) {
+              const tmp = new Html5Qrcode('scannerViewport', { verbose: false });
+              try {
+                const t = await tmp.scanFile(blob, true);
+                if (t && (t || '').trim()) {
+                  clearInterval(dashDecodeTimer); dashDecodeTimer = null;
+                  try { await tmp.clear(); } catch (e) {}
+                  busy = false;
+                  await onScanSuccess((t || '').trim());
+                  return;
+                }
+              } catch (e) { /* per-frame miss: ignore */ }
+              try { await tmp.clear(); } catch (e) {}
+            }
           }
-        } catch (e) {}
+        } catch (e) { /* per-frame miss: ignore */ }
         busy = false;
-      }, 450);
+      }, 400);
+    }
+
+    // Backwards-compatible alias (older code path name).
+    function startDashSnapshotDecode(onScanSuccess) {
+      return startDashPreviewDecode(onScanSuccess);
     }
 
     async function stopScanner() {
       if (dashDecodeTimer) { clearInterval(dashDecodeTimer); dashDecodeTimer = null; }
-      if (dashStream) { try { dashStream.getTracks().forEach((t) => { try { t.stop(); } catch (e) {} }); } catch (e) {} dashStream = null; }
-      const pv = document.getElementById('dashPreview');
-      if (pv) { try { pv.srcObject = null; } catch (e) {} }
+      dashDetector = null;
+      cleanupDashStream();
       if (html5QrcodeScanner) {
-        if (isScanning) {
-          try { await html5QrcodeScanner.stop(); } catch (err) { console.error('Error stopping scanner:', err && err.name, err && err.message, err); }
+        // Defensive: dashboard live path never starts Html5Qrcode, but clear
+        // any temporary decoder object so no hidden stream can linger.
+        try {
+          if (isScanning) {
+            try { await html5QrcodeScanner.stop(); } catch (err) { console.error('Error stopping scanner:', err && err.name, err && err.message, err); }
+          }
+        } finally {
+          try { await html5QrcodeScanner.clear(); } catch (err) { console.error('Error stopping scanner:', err && err.name, err && err.message, err); }
+          html5QrcodeScanner = null;
         }
-        try { await html5QrcodeScanner.clear(); } catch (err) { console.error('Error stopping scanner:', err && err.name, err && err.message, err); }
-        html5QrcodeScanner = null;
       }
       isScanning = false;
-      document.getElementById('scanBtn').classList.remove('d-none');
+      const sb = document.getElementById('scanBtn');
+      if (sb) { sb.classList.remove('d-none'); }
     }
 
     function showScanResult(type, message, icon) {
