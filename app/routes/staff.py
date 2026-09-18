@@ -1,38 +1,24 @@
-"""Staff Dashboard page route.
+"""Staff Dashboard page shell.
 
-Renders the staff dashboard showing the assigned centre and operational
-quick-links. Centre isolation is enforced on every operational API; this
-page itself only displays information belonging to the assigned centre.
+Renders the staff dashboard HTML shell. The server embeds NO staff, centre or
+queue data: the page itself authenticates through the shared ``auth.js``
+helper (``window.KP.authFetch()``) and loads everything from the authenticated
+JSON APIs, where STAFF/ADMIN role authorization and centre isolation stay
+enforced.
 
-An unassigned STAFF (centre_id = None) sees a clear message instead of
-centre operations.
+This is a PAGE route, not an API endpoint, so - exactly like the Farmer and
+Admin dashboard shells (``app/routes/main.py``) - it is served to plain browser
+navigation, which cannot send the Bearer Authorization header. An unassigned
+STAFF (centre_id = None) is resolved client-side via ``GET /api/auth/me`` and
+sees a clear message instead of centre operations.
 """
 
-from flask import Blueprint, render_template, g
-
-from app.auth.decorators import login_required, role_required
-from app.models import UserRole, Staff
+from flask import Blueprint, render_template
 
 staff_bp = Blueprint("staff", __name__, url_prefix="/staff")
 
 
 @staff_bp.get("/dashboard")
-@login_required
-@role_required(UserRole.STAFF)
 def staff_dashboard():
-    """Render the staff dashboard HTML template for browser navigation.
-
-    Client-side JavaScript (auth.js) will authenticate the Bearer token, verify
-    the STAFF role, and dynamically load centre/queue data via authenticated APIs.
-    """
-    staff = None
-    centre = None
-    if hasattr(g, "current_user") and g.current_user:
-        staff = Staff.query.filter_by(user_id=g.current_user.id).first()
-        centre = staff.centre if staff else None
-
-    return render_template(
-        "staff_dashboard.html",
-        staff=staff,
-        centre=centre,
-    )
+    """Serve the public staff dashboard HTML shell (no staff data embedded)."""
+    return render_template("staff_dashboard.html")

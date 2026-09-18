@@ -439,26 +439,127 @@ class TestUnassignedStaff:
         assert "contact the administrator" in msg or "not been assigned" in msg
 
 
-# === 9. STAFF DASHBOARD & AUTH REGRESSION TESTS ===
+# === 9. STAFF DASHBOARD (PUBLIC HTML SHELL) & AUTH REGRESSION TESTS ===
 
 class TestStaffDashboard:
+    """/staff/dashboard is a PUBLIC HTML page shell, exactly like the Farmer and
+    Admin dashboard shells in app/routes/main.py.
+
+    The shell embeds NO staff/centre/queue/session data: the page authenticates
+    through window.KP.authFetch() (shared auth.js helper) and loads everything
+    from the authenticated JSON APIs, where STAFF role authorization and centre
+    isolation stay enforced.
+    """
+
+    # --- 1-4: the page shell itself -----------------------------------------
 
     def test_staff_dashboard_browser_navigation(self, client):
-        """Top-level GET request without Bearer token is now blocked (401) by Stage 2 auth."""
+        """1. Plain browser navigation (no Authorization header) gets the page."""
         resp = client.get("/staff/dashboard")
-        assert resp.status_code == 401
+        assert resp.status_code == 200
+        assert "text/html" in resp.content_type
 
-    def test_staff_dashboard_queue_date_selector_and_response_keys(self, client):
-        """Dashboard now requires authentication (401) per Stage 2; unauthenticated request blocked."""
-        resp = client.get("/staff/dashboard")
-        assert resp.status_code == 401
+    def test_staff_dashboard_is_the_staff_html_shell(self, client):
+        """2. The response is the staff dashboard HTML shell."""
+        html = client.get("/staff/dashboard").get_data(as_text=True)
+        assert "<!DOCTYPE html>" in html
+        assert "KisanProcure Staff" in html
+        assert "Staff Panel" in html
+        assert 'id="assignedCentreContainer"' in html
+        assert 'id="unassignedCentreContainer"' in html
+        # Client-side-only controls: queue date selector + QR scanner section.
+        assert 'id="queueDate"' in html
+        assert "Smart Queue Pass Scanner" in html
+        assert "initStaffDashboard" in html
+
+    def test_staff_dashboard_shell_uses_auth_js_and_auth_fetch(self, client):
+        """3. The shell carries the existing auth.js / authFetch mechanism."""
+        html = client.get("/staff/dashboard").get_data(as_text=True)
+        assert "/static/js/auth.js" in html
+        assert "window.KP.authFetch" in html
+        # An unauthenticated browser session is bounced to login client-side.
+        assert "/login?next=/staff/dashboard" in html
+
+    def test_staff_dashboard_shell_embeds_no_server_side_staff_data(
+        self, client, staff_a, centre_a
+    ):
+        """4. No staff/centre identity or session material is rendered.
+
+        The fixtures insert a real assigned STAFF and centre, so these
+        assertions prove the route renders none of that server-side.
+        """
+        html = client.get("/staff/dashboard").get_data(as_text=True)
+        assert staff_a.name not in html       # "Staff Alpha"
+        assert staff_a.phone not in html      # "9000000011"
+        assert centre_a.name not in html      # "Centre Alpha"
+        assert centre_a.location not in html  # "Location A"
+        assert "eyJ" not in html              # no JWT header prefix
+        assert "kp_access_token" not in html  # no token material
 
     def test_assigned_staff_dashboard_loads_template(self, client, staff_a):
-        """Authenticated STAFF access to dashboard template returns 200 OK."""
+        """The same public shell loads for an assigned STAFF as well."""
         resp = make_auth_call(client, "GET", "/staff/dashboard", "staff-a-sub")
         assert resp.status_code == 200
         html = resp.get_data(as_text=True)
         assert "KisanProcure Staff" in html
+
+    # --- 5-9: the protected APIs are untouched ------------------------------
+
+    def test_protected_staff_apis_still_require_authentication(self, client, centre_a):
+        """5. Opening the page shell opens no staff API: they all answer 401."""
+        assert client.get("/api/auth/me").status_code == 401
+        assert client.get(f"/api/queue/centre/{centre_a.id}").status_code == 401
+        assert client.get("/api/delays").status_code == 401
+        assert client.post("/api/delays", json={
+            "centre_id": centre_a.id,
+            "delay_date": date.today().isoformat(),
+            "delay_minutes": 30,
+        }).status_code == 401
+        assert client.get("/api/procurement/1").status_code == 401
+        assert client.get("/api/payment/1").status_code == 401
+
+    def test_staff_role_authorization_enforced_on_protected_apis(
+        self, client, farmer_user, centre_a
+    ):
+        """6. A FARMER is still refused by every protected STAFF API -> 403."""
+        assert make_auth_call(client, "GET", f"/api/queue/centre/{centre_a.id}",
+                              "farmer-sub-1").status_code == 403
+        assert make_auth_call(client, "POST", "/api/delays", "farmer-sub-1",
+                              {"centre_id": centre_a.id,
+                               "delay_date": date.today().isoformat(),
+                               "delay_minutes": 30}).status_code == 403
+
+    def test_staff_centre_isolation_enforced_on_protected_apis(
+        self, client, staff_a, centre_b
+    ):
+        """7. Staff A still cannot reach Centre B operations -> 403."""
+        assert make_auth_call(client, "GET", f"/api/queue/centre/{centre_b.id}",
+                              "staff-a-sub").status_code == 403
+
+    def test_unassigned_staff_shell_loads_but_apis_stay_403(
+        self, client, unassigned_staff, centre_a
+    ):
+        """8. Unassigned STAFF gets the public shell; centre APIs keep the 403."""
+        assert client.get("/staff/dashboard").status_code == 200
+        assert make_auth_call(client, "GET", f"/api/queue/centre/{centre_a.id}",
+                              "staff-unassigned-sub").status_code == 403
+        res = make_auth_call(client, "POST", "/api/delays", "staff-unassigned-sub",
+                             {"centre_id": centre_a.id,
+                              "delay_date": date.today().isoformat(),
+                              "delay_minutes": 30})
+        assert res.status_code == 403
+        msg = res.get_json()["message"].lower()
+        assert "contact the administrator" in msg or "not been assigned" in msg
+
+    def test_qr_scanner_endpoint_remains_protected(self, client):
+        """9. The QR scanner API is never public, even though its page is."""
+        assert client.post(
+            "/api/queue-pass/verify",
+            json={"pass_id": "kp_pass_not_a_real_id"},
+        ).status_code == 401
+        assert client.get(
+            "/api/queue-pass/lookup/kp_pass_not_a_real_id"
+        ).status_code == 401
 
     def test_api_auth_me_returns_staff_profile(self, client, staff_a):
         """GET /api/auth/me returns staff profile details including assigned centre."""

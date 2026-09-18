@@ -58,7 +58,16 @@ gunicorn>=22.0,<24
 # `img.save(buffer, format="PNG")` - because qrcode silently falls back to the
 # pure-python PyPNGImage backend (whose save() takes no `format` keyword)
 # whenever Pillow is unavailable.
+#
+# pypng is REQUIRED (not optional): it is the actual PyPNGImage writer library
+# (module `png`) that qrcode uses both on the no-Pillow fallback path and in
+# the TestStage2QRProductionBackendRegression tests, which patch Pillow away
+# and exercise the real PyPNGImage code. `qrcode[pil]` only pulls Pillow, so
+# without this explicit line any fresh requirements-based install can render
+# via Pillow but raises `ImportError: PyPNG library not installed` on the
+# fallback path. Pure-python, zero runtime cost when Pillow is present.
 qrcode[pil]>=7.4,<8
+pypng==0.20220715.0
 
 # --- Testing ---------------------------------------------------------------------
 pytest>=8.0,<9

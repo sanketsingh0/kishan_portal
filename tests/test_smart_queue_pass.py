@@ -1391,12 +1391,29 @@ class TestStage2StaffScanner:
         assert "html5-qrcode" in body  # Scanner library
 
     def test_farmer_cannot_access_staff_scanner(self, client, pass_setup):
-        """F. Farmer cannot access staff scanner."""
-        res = make_call(
+        """F. Farmer cannot USE the staff scanner.
+
+        Stage 2 production fix: /staff/dashboard is a public HTML page shell
+        (like /farmer/dashboard), so a plain browser navigation returns the
+        shell - with no staff, centre, queue or session data embedded in it.
+        The scanner's only backend call is still STAFF/ADMIN only, so a FARMER
+        is rejected there (403) and can never verify a pass.
+        """
+        page = make_call(
             client, "GET", "/staff/dashboard",
             pass_setup["farmer1_sub"],
         )
-        assert res.status_code == 403
+        assert page.status_code == 200  # public page shell ...
+
+        body = page.get_data(as_text=True)
+        assert "9876500101" not in body  # ... with no farmer data in it
+        assert "eyJ" not in body         # ... and no token material
+
+        # The security boundary is the protected API, and it still holds.
+        assert make_call(
+            client, "POST", "/api/queue-pass/verify",
+            pass_setup["farmer1_sub"], {"pass_id": "kp_pass_not_allowed"},
+        ).status_code == 403
 
     def test_scanner_sends_only_pass_id_to_verify(self, app, client, pass_setup):
         """G. Scanner sends only pass_id to verify endpoint."""
