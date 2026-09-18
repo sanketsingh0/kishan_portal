@@ -2,126 +2,59 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no, viewport-fit=cover">
-<title>KisanProcure - Scan Queue Pass</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+<title>KisanProcure - Scan</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&display=swap" rel="stylesheet">
 <link href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css" rel="stylesheet">
-<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
 <style>
-:root{--kp:#1b4332;--kpl:#2d6a4f}
-*{ -webkit-tap-highlight-color:transparent }
-body{font-family:'Outfit',system-ui,sans-serif;background:#0b1512;color:#fff;min-height:100dvh;margin:0}
-.topbar{position:sticky;top:0;z-index:20;background:linear-gradient(135deg,#0d1b2a,#1b4332);padding:calc(env(safe-area-inset-top,0px) + 10px) 14px 12px;display:flex;align-items:center;gap:10px}
-.topbar a.back{color:#fff;text-decoration:none;width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.12);border-radius:12px}
-.stage{position:relative;width:100%;height:calc(100dvh - 230px);min-height:340px;background:#000;overflow:hidden}
-#scanViewport{position:absolute;inset:0;width:100%!important;height:100%!important}
-#scanViewport video{position:absolute!important;inset:0!important;width:100%!important;height:100%!important;object-fit:cover!important;background:#000}
-#scanViewport canvas{display:none}
-.frame{position:absolute;inset:0;pointer-events:none;display:flex;align-items:center;justify-content:center;z-index:5}
-.box{width:min(72vw,300px);aspect-ratio:1/1;border:3px solid #52b788;border-radius:18px;box-shadow:0 0 0 9999px rgba(0,0,0,.55);position:relative}
-.box::after{content:'';position:absolute;left:8%;right:8%;height:3px;background:#ffbf00;border-radius:3px;top:10%;animation:sl 2.2s ease-in-out infinite alternate;box-shadow:0 0 12px #ffbf00}
-@keyframes sl{from{top:10%}to{top:86%}}
-.hint{position:absolute;bottom:14px;left:0;right:0;text-align:center;z-index:6;font-size:.85rem;color:#e9ecef;text-shadow:0 1px 6px #000;padding:0 16px}
-.panel{background:#fff;color:#212529;border-radius:20px 20px 0 0;margin-top:-18px;position:relative;z-index:10;padding:14px 14px calc(env(safe-area-inset-bottom,0px) + 16px)}
-.btn-kp{background:var(--kp);color:#fff;font-weight:700;border-radius:12px}
-.btn-kp:hover{background:var(--kpl);color:#fff}
-#fileInput{display:none}
+body{font-family:system-ui,sans-serif;background:#0b1512;color:#fff;margin:0;min-height:100dvh}
+.topbar{position:sticky;top:0;z-index:20;background:#1b4332;padding:12px 14px;display:flex;align-items:center;gap:10px}
+.topbar a.back{color:#fff;text-decoration:none;width:40px;height:40px;display:flex;align-items:center;justify-content:center;background:rgba(255,255,255,.15);border-radius:12px}
+.stage{position:relative;width:100%;height:55vh;min-height:340px;background:#000;overflow:hidden}
+#nativePreview{position:absolute;inset:0;width:100%;height:100%;object-fit:cover;background:#000}
+.frame{position:absolute;inset:0;display:flex;align-items:center;justify-content:center;pointer-events:none;z-index:5}
+.box{width:min(70vw,280px);aspect-ratio:1;border:3px solid #52b788;border-radius:16px;box-shadow:0 0 0 9999px rgba(0,0,0,.55)}
+.panel{background:#fff;color:#212529;border-radius:18px 18px 0 0;margin-top:-16px;position:relative;z-index:10;padding:14px}
+.btn-kp{background:#1b4332;color:#fff;font-weight:700;border-radius:12px}
+.hint{position:absolute;bottom:10px;left:0;right:0;text-align:center;font-size:.82rem;text-shadow:0 1px 6px #000;z-index:6}
+#debugLine{font-size:.72rem;color:#6c757d;word-break:break-all}
 </style>
 </head>
 <body>
 <div class="topbar">
-<a class="back" href="/staff/dashboard" aria-label="Back"><i class="fa-solid fa-arrow-left"></i></a>
-<div><div class="fw-bold">Scan Queue Pass</div><small class="text-white-50" id="centreLabel">Staff scanner &bull; rear camera</small></div>
+<a class="back" href="/staff/dashboard"><i class="fa-solid fa-arrow-left"></i></a>
+<div><div class="fw-bold">Scan Queue Pass</div><small id="centreLabel">rear camera</small></div>
 <div class="ms-auto d-flex gap-2">
 <button id="torchBtn" class="btn btn-sm btn-outline-light d-none"><i class="fa-solid fa-bolt"></i></button>
 <button id="flipBtn" class="btn btn-sm btn-outline-light"><i class="fa-solid fa-camera-rotate"></i></button>
 </div>
 </div>
-<div class="stage" id="scanStage">
-<div id="scanViewport"></div>
+<div class="stage">
+<video id="nativePreview" playsinline muted autoplay></video>
 <div class="frame"><div class="box"></div></div>
-<div class="hint" id="scanHint">Point the farmer QR inside the green box</div>
+<div class="hint">Point QR inside green box</div>
 </div>
 <div class="panel">
-<div id="statusBox" class="alert alert-info py-2 mb-2"><i class="fa-solid fa-circle-info me-2"></i><span id="statusText">Starting camera...</span></div>
+<div id="statusBox" class="alert alert-info py-2 mb-2"><span id="statusText">Tap Start Camera, then Allow.</span></div>
+<div class="small text-muted mb-1">Secure: <b id="secureState">?</b> | <span id="debugLine"></span></div>
 <div id="resultBox" class="d-none"></div>
 <div class="d-grid gap-2 mt-2">
-<button id="startBtn" class="btn btn-kp btn-lg d-none" onclick="startScan()"><i class="fa-solid fa-camera me-2"></i>Start Camera</button>
-<button id="stopBtn" class="btn btn-outline-danger" onclick="stopScan()"><i class="fa-solid fa-stop me-2"></i>Stop</button>
+<button id="startBtn" class="btn btn-kp btn-lg" onclick="startScan()">Start Camera</button>
+<button class="btn btn-outline-danger" onclick="stopScan()">Stop</button>
 <div class="row g-2">
-<div class="col-6"><label for="fileInput" class="btn btn-outline-secondary w-100"><i class="fa-solid fa-image me-1"></i>Upload QR</label><input id="fileInput" type="file" accept="image/*"></div>
-<div class="col-6"><button class="btn btn-outline-secondary w-100" onclick="document.getElementById('manualId').focus()"><i class="fa-solid fa-keyboard me-1"></i>Enter ID</button></div>
+<div class="col-6"><label class="btn btn-outline-secondary w-100 mb-0">Upload QR<input id="fileInput" type="file" accept="image/*" hidden></label></div>
+<div class="col-6"><button class="btn btn-outline-secondary w-100" onclick="document.getElementById('manualId').focus()">Enter ID</button></div>
 </div>
 <div class="row g-2">
-<div class="col-8"><input id="manualId" class="form-control" placeholder="e.g. kp_pass_abc123"></div>
+<div class="col-8"><input id="manualId" class="form-control" placeholder="kp_pass_..."></div>
 <div class="col-4"><button class="btn btn-kp w-100" onclick="verifyManual()">Verify</button></div>
 </div>
-<a href="/staff/dashboard" class="btn btn-light"><i class="fa-solid fa-warehouse me-1"></i>Back to Dashboard</a>
+<a href="/staff/dashboard" class="btn btn-light">Back to Dashboard</a>
 </div>
 </div>
-<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.2/dist/js/bootstrap.bundle.min.js"></script>
+<div id="qrTmp" style="display:none"></div>
 <script src="/static/js/auth.js"></script>
-<script>
-let scanner=null,scanning=false,facing='environment',torchOn=false;
-function setStatus(m,t){document.getElementById('statusText').textContent=m;document.getElementById('statusBox').className='alert py-2 mb-2 alert-'+(t||'info');}
-function qrSize(){const w=Math.min(window.innerWidth||360,640);const s=Math.max(180,Math.min(300,Math.floor(w*0.68)));return{width:s,height:s};}
-function cfg(){return{fps:12,qrbox:qrSize(),aspectRatio:1.0,disableFlip:false,experimentalFeatures:{useBarCodeDetectorIfSupported:true}};}
-async function ensureLib(){if(typeof Html5Qrcode!=='undefined')return;await new Promise((res,rej)=>{const s=document.createElement('script');s.src='https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js';s.onload=res;s.onerror=()=>rej(new Error('lib'));document.head.appendChild(s);});}
-async function startScan(){
-if(scanning)return;
-document.getElementById('startBtn').classList.add('d-none');
-document.getElementById('resultBox').classList.add('d-none');
-try{
-await ensureLib();
-if(!navigator.mediaDevices||!navigator.mediaDevices.getUserMedia){setStatus('Camera not supported. Use HTTPS/Chrome/Safari, or Upload QR.','danger');document.getElementById('startBtn').classList.remove('d-none');return;}
-if(!scanner)scanner=new Html5Qrcode('scanViewport',{verbose:false});
-setStatus('Starting camera... allow permission.','info');
-const ok=async(t)=>{await onOK(t);};
-try{await scanner.start({facingMode:facing},cfg(),ok,()=>{});}
-catch(e){
-try{await scanner.start({facingMode:{exact:'environment'}},cfg(),ok,()=>{});}
-catch(e2){
-try{await scanner.start({facingMode:'environment'},cfg(),ok,()=>{});}
-catch(e3){
-const cams=await Html5Qrcode.getCameras().catch(()=>[]);
-if(cams&&cams.length){const rear=cams.find(c=>/back|rear|environment/i.test(c.label||''))||cams[cams.length-1];await scanner.start(rear.id,cfg(),ok,()=>{});}
-else throw e3;
-}}}}
-scanning=true;setStatus('Camera live - hold QR inside the green box.','success');
-try{const tr=scanner.getRunningTrack?scanner.getRunningTrack():null;const cp=tr&&tr.getCapabilities?tr.getCapabilities():{};if(cp&&cp.torch)document.getElementById('torchBtn').classList.remove('d-none');}catch(e){}
-}catch(err){
-scanning=false;document.getElementById('startBtn').classList.remove('d-none');
-const n=(err&&err.name)||'';
-if(n==='NotAllowedError')setStatus('Camera blocked. Allow camera permission then Start.','danger');
-else if(n==='NotFoundError')setStatus('No camera found. Use Upload QR or Enter ID.','danger');
-else if(n==='NotReadableError')setStatus('Camera busy in another app/tab. Close it then Start.','danger');
-else setStatus('Could not start camera. Try Upload QR.','danger');
-}}
-async function stopScan(){if(scanner&&scanning){try{await scanner.stop();}catch(e){}}scanning=false;torchOn=false;document.getElementById('torchBtn').classList.add('d-none');document.getElementById('startBtn').classList.remove('d-none');setStatus('Scanner stopped.','secondary');}
-async function onOK(t){const id=(t||'').trim();if(!id)return;if(navigator.vibrate){try{navigator.vibrate(80);}catch(e){}}await stopScan();verifyPass(id);}
-document.getElementById('torchBtn').addEventListener('click',async()=>{try{const tr=scanner.getRunningTrack();torchOn=!torchOn;await tr.applyConstraints({advanced:[{torch:torchOn}]});}catch(e){setStatus('Torch not supported.','warning');}});
-document.getElementById('flipBtn').addEventListener('click',async()=>{facing=(facing==='environment')?'user':'environment';if(scanner&&scanning){try{await scanner.stop();}catch(e){}}scanning=false;try{if(scanner)await scanner.clear();}catch(e){}scanner=null;startScan();});
-document.getElementById('fileInput').addEventListener('change',async(e)=>{const f=e.target.files&&e.target.files[0];if(!f)return;try{await ensureLib();const tmp=new Html5Qrcode('scanViewport');const id=await tmp.scanFile(f,true);try{await tmp.clear();}catch(_){}verifyPass((id||'').trim());}catch(err){setStatus('Could not read QR from image.','danger');}e.target.value='';});
-function verifyManual(){const v=document.getElementById('manualId').value.trim();if(!v){setStatus('Type pass ID first.','warning');return;}verifyPass(v);}
-async function verifyPass(pid){
-const box=document.getElementById('resultBox');box.classList.remove('d-none');box.innerHTML='<div class="alert alert-info py-2">Verifying pass...</div>';
-try{
-const res=await window.KP.authFetch('/api/queue-pass/verify',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({pass_id:pid})});
-const data=await res.json().catch(()=>({}));
-if(!res.ok){let m=data.message||'Pass Not Eligible for Entry';if(res.status===404)m='Invalid Queue Pass';else if(res.status===403)m='Pass Belongs to Another Centre';else if(res.status===409){const st=data.smart_queue_pass&&(data.smart_queue_pass.pass_status||data.smart_queue_pass.status);m=st==='VERIFIED'?'Pass Already Verified':(st==='CANCELLED'?'Pass Cancelled':(data.message||m));}box.innerHTML='<div class="alert alert-danger"><strong>'+m+'</strong><br><small>'+pid+'</small></div>';return;}
-const p=data.smart_queue_pass||{};const fn=(p.farmer&&p.farmer.name)||'--';const tk=(p.booking&&p.booking.token_number)||'--';const bid=(p.booking&&p.booking.id)||'--';const cn=(p.centre&&p.centre.name)||'--';const cr=(p.crop&&p.crop.name)||'--';const dt=(p.slot&&p.slot.slot_date)||'--';const tm=((p.slot&&p.slot.start_time)||'')+' - '+((p.slot&&p.slot.end_time)||'');
-box.innerHTML='<div class="card border-success"><div class="card-header bg-success text-white fw-bold">ENTRY VERIFIED</div><div class="card-body"><div>Farmer: <b>'+fn+'</b></div><div>Token: <b>'+tk+'</b></div><div>Booking: <b>#'+bid+'</b></div><div>Centre: <b>'+cn+'</b></div><div>Crop: <b>'+cr+'</b></div><div>Date: <b>'+dt+'</b></div><div>Slot: <b>'+tm+'</b></div><span class="badge bg-success mt-2">'+(p.pass_status||p.status||'VERIFIED')+'</span><div class="mt-3 d-grid"><button class="btn btn-kp" onclick="startScan()">Scan Next Pass</button></div></div></div>';
-box.scrollIntoView({behavior:'smooth',block:'center'});
-}catch(e){box.innerHTML='<div class="alert alert-danger">Network error. Try again.</div>';}
-}
-document.addEventListener('DOMContentLoaded',()=>{
-const t=window.KP.getAuthToken();if(!t){window.location.href='/login?next=/staff/scan';return;}
-window.KP.authFetch('/api/auth/me').then(r=>r.json().then(d=>({ok:r.ok,d}))).then(({ok,d})=>{const u=(d&&d.user)||{};if(!ok||(u.role!=='STAFF'&&u.role!=='ADMIN')){setStatus('Staff login required.','danger');setTimeout(()=>window.location.href='/login?next=/staff/scan',1500);return;}const pr=u.profile||{};if(pr.centre_name)document.getElementById('centreLabel').textContent=pr.centre_name+' - scanner';startScan();}).catch(()=>startScan());
-document.addEventListener('visibilitychange',()=>{if(document.hidden&&scanning)stopScan();});
-});
-</script>
-</body>
-</html>
+<script src="https://unpkg.com/html5-qrcode@2.3.8/html5-qrcode.min.js"></script>
+<script src="/static/js/staff_scan.js"></script>
 </body>
 </html>
