@@ -31,6 +31,8 @@ def _format_farmer_response(farmer):
         "city": farmer.city,
         "state": farmer.state,
         "pincode": farmer.pincode,
+        "district": farmer.district,
+        "tehsil": farmer.tehsil,
     }
 
 

@@ -69,7 +69,8 @@ def test_users(app):
         db.session.add_all([u_farmer1, u_farmer2, u_staff])
         db.session.commit()
 
-        f1 = Farmer(id=1, user_id=101, name="Farmer One", state="Punjab", city="Ludhiana")
+        f1 = Farmer(id=1, user_id=101, name="Farmer One", state="Punjab", city="Ludhiana",
+                    district="Ludhiana")
         f2 = Farmer(id=2, user_id=102, name="Farmer Two", state="Punjab", city="Amritsar")
         s1 = Staff(id=1, user_id=103, name="Staff One", centre_id=1)
         db.session.add_all([f1, f2, s1])
@@ -82,7 +83,8 @@ def test_users(app):
 def setup_domain(app, test_users):
     """Setup centre, crop, slot, and bookings for domain testing."""
     with app.app_context():
-        c1 = Centre(id=1, name="Ludhiana Mandi", location="Ludhiana, Punjab", daily_capacity=100, is_active=True)
+        c1 = Centre(id=1, name="Ludhiana Mandi", location="Ludhiana, Punjab", district="Ludhiana",
+                    daily_capacity=100, is_active=True)
         c2 = Centre(id=2, name="Amritsar Mandi", location="Amritsar, Punjab", daily_capacity=100, is_active=True)
         crop1 = Crop(id=1, name="Wheat", is_active=True)
         db.session.add_all([c1, c2, crop1])

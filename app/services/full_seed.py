@@ -48,6 +48,8 @@ T1800 = time(18, 0)
 CENTRE_A = {
     "name": "KisanProcure Mandi - Ludhiana Grade-A",
     "location": "Focal Point Road, Ludhiana, Punjab (demo)",
+    "district": "Ludhiana",
+    "tehsil": "Ludhiana East",
     "opening_time": T0800,
     "closing_time": T1700,
     "daily_capacity": 200,
@@ -58,6 +60,8 @@ CENTRE_A = {
 CENTRE_B = {
     "name": "KisanProcure Mandi - Patiala",
     "location": "Demo Agricultural Yard, Patiala, Punjab (demo)",
+    "district": "Patiala",
+    "tehsil": "Patiala",
     "opening_time": T0900,
     "closing_time": T1800,
     "daily_capacity": 150,
@@ -85,6 +89,8 @@ DEMO_FARMERS = (
         "city": "Ludhiana",
         "state": "Punjab",
         "pincode": "141001",
+        "district": "Ludhiana",
+        "tehsil": "Ludhiana East",
     },
     {
         "name": "Amarjeet Kaur",
@@ -93,6 +99,8 @@ DEMO_FARMERS = (
         "city": "Ludhiana",
         "state": "Punjab",
         "pincode": "141001",
+        "district": "Ludhiana",
+        "tehsil": "Ludhiana West",
     },
     {
         "name": "Gurpreet Sandhu",
@@ -101,6 +109,8 @@ DEMO_FARMERS = (
         "city": "Ludhiana",
         "state": "Punjab",
         "pincode": "141008",
+        "district": "Ludhiana",
+        "tehsil": "Samrala",
     },
     {
         "name": "Manjeet Gill",
@@ -109,6 +119,8 @@ DEMO_FARMERS = (
         "city": "Ludhiana",
         "state": "Punjab",
         "pincode": "141101",
+        "district": "Ludhiana",
+        "tehsil": "Jagraon",
     },
     {
         "name": "Harpreet Brar",
@@ -117,6 +129,8 @@ DEMO_FARMERS = (
         "city": "Ludhiana",
         "state": "Punjab",
         "pincode": "141202",
+        "district": "Ludhiana",
+        "tehsil": "Khanna",
     },
 )
 
@@ -287,6 +301,8 @@ def seed_demo_full():
                 city=payload.get("city"),
                 state=payload.get("state"),
                 pincode=payload.get("pincode"),
+                district=payload.get("district"),
+                tehsil=payload.get("tehsil"),
             )
             db.session.add(farmer)
             db.session.commit()

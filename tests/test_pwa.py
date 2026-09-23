@@ -78,12 +78,14 @@ def test_full_end_to_end_kisanprocure_workflow(app):
         db.session.add_all([f_user, a_user])
         db.session.commit()
 
-        farmer = Farmer(id=50, user_id=501, name="E2E Farmer", state="Punjab", city="Patiala")
+        farmer = Farmer(id=50, user_id=501, name="E2E Farmer", state="Punjab", city="Patiala",
+                        district="Patiala")
         db.session.add(farmer)
         db.session.commit()
 
         # 2. Centre & Crop Management
-        centre = Centre(id=50, name="Patiala Central Mandi", location="Patiala", daily_capacity=100, is_active=True)
+        centre = Centre(id=50, name="Patiala Central Mandi", location="Patiala", district="Patiala",
+                        daily_capacity=100, is_active=True)
         crop = Crop(id=50, name="Basmati Rice", category="Paddy", is_active=True)
         db.session.add_all([centre, crop])
         db.session.commit()

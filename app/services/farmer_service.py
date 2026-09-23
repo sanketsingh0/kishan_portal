@@ -129,6 +129,20 @@ def update_farmer_profile(user_id: int, data: dict) -> Farmer:
         else:
             farmer.state = state if state else None
 
+    if "district" in data and data["district"] is not None:
+        district = str(data["district"]).strip()
+        if len(district) > 100:
+            errors.append("District cannot exceed 100 characters.")
+        else:
+            farmer.district = district if district else None
+
+    if "tehsil" in data and data["tehsil"] is not None:
+        tehsil = str(data["tehsil"]).strip()
+        if len(tehsil) > 100:
+            errors.append("Tehsil cannot exceed 100 characters.")
+        else:
+            farmer.tehsil = tehsil if tehsil else None
+
     if errors:
         raise FarmerValidationError("Profile validation failed", errors=errors)
 

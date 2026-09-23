@@ -18,9 +18,14 @@ class BookingStatus:
     CANCELLED = "CANCELLED"
     COMPLETED = "COMPLETED"
     NO_SHOW = "NO_SHOW"
+    CARRIED_FORWARD = "CARRIED_FORWARD"
 
-    choices = (PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW)
+    choices = (PENDING, CONFIRMED, CANCELLED, COMPLETED, NO_SHOW, CARRIED_FORWARD)
     active_statuses = (PENDING, CONFIRMED)
+    # Bookings that have been system-rescheduled to the next procurement date.
+    # CARRIED_FORWARD is terminal for the source-day queue: such bookings stay
+    # in history, are excluded from the active queue, and can never be carried
+    # forward a second time.
 
 
 class Booking(TimestampMixin, db.Model):

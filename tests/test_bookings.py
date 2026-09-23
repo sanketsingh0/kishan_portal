@@ -46,7 +46,8 @@ def farmer_user(app):
         u = User(supabase_user_id="farmer-uuid-1", role=UserRole.FARMER, is_active=True)
         db.session.add(u)
         db.session.flush()
-        f = Farmer(user_id=u.id, name="Ramesh Kumar", phone="9876543210")
+        f = Farmer(user_id=u.id, name="Ramesh Kumar", phone="9876543210",
+                   district="Karnal")
         db.session.add(f)
         db.session.commit()
         yield u
@@ -58,7 +59,8 @@ def farmer_user_2(app):
         u = User(supabase_user_id="farmer-uuid-2", role=UserRole.FARMER, is_active=True)
         db.session.add(u)
         db.session.flush()
-        f = Farmer(user_id=u.id, name="Suresh Patel", phone="9876543211")
+        f = Farmer(user_id=u.id, name="Suresh Patel", phone="9876543211",
+                   district="Karnal")
         db.session.add(f)
         db.session.commit()
         yield u
@@ -89,6 +91,7 @@ def base_booking_data(app):
         c_active = Centre(
             name="Central Mandi",
             location="Karnal",
+            district="Karnal",
             opening_time=time(9, 0),
             closing_time=time(17, 0),
             daily_capacity=100,
@@ -97,6 +100,7 @@ def base_booking_data(app):
         c_inactive = Centre(
             name="Inactive Mandi",
             location="Old Town",
+            district="Karnal",
             is_active=False,
         )
         cr_active = Crop(name="Wheat", category="Cereal", is_active=True)
@@ -306,7 +310,8 @@ class TestCapacityAndConflictRules:
             u3 = User(supabase_user_id="farmer-uuid-3", role=UserRole.FARMER, is_active=True)
             db.session.add(u3)
             db.session.flush()
-            f3 = Farmer(user_id=u3.id, name="Kisan 3", phone="9876543212")
+            f3 = Farmer(user_id=u3.id, name="Kisan 3", phone="9876543212",
+                        district="Karnal")
             db.session.add(f3)
             db.session.commit()
 

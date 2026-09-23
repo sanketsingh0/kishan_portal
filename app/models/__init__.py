@@ -21,6 +21,7 @@ from app.models.centre import Centre
 from app.models.crop import Crop
 from app.models.slot import Slot, SlotStatus
 from app.models.booking import Booking, BookingStatus
+from app.models.booking_carry_forward import BookingCarryForward, CarryForwardReason
 from app.models.smart_queue_pass import SmartQueuePass, SmartQueuePassStatus
 from app.models.procurement import Procurement, ProcurementStatus
 from app.models.payment import Payment, PaymentStatus
@@ -40,6 +41,8 @@ __all__ = [
     "SlotStatus",
     "Booking",
     "BookingStatus",
+    "BookingCarryForward",
+    "CarryForwardReason",
     "SmartQueuePass",
     "SmartQueuePassStatus",
     "Procurement",

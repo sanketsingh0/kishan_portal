@@ -152,8 +152,10 @@ def pass_setup(app):
         db.session.commit()
 
         c_a = Centre(name="Pass Test Centre A", location="Ludhiana",
+                     district="Ludhiana",
                      daily_capacity=100, average_processing_minutes=15, is_active=True)
         c_b = Centre(name="Pass Test Centre B", location="Patiala",
+                     district="Patiala",
                      daily_capacity=100, average_processing_minutes=15, is_active=True)
         crop = Crop(name="Pass Test Wheat", is_active=True)
         db.session.add_all([c_a, c_b, crop])
@@ -162,8 +164,10 @@ def pass_setup(app):
         staff_a = Staff(user_id=u_staff_a.id, name="Pass Staff A", centre_id=c_a.id)
         staff_b = Staff(user_id=u_staff_b.id, name="Pass Staff B", centre_id=c_b.id)
         staff_none = Staff(user_id=u_staff_none.id, name="Pass Staff Unassigned", centre_id=None)
-        farmer1 = Farmer(user_id=u_farmer1.id, name="Pass Farmer One", phone="9876500101")
-        farmer2 = Farmer(user_id=u_farmer2.id, name="Pass Farmer Two", phone="9876500102")
+        farmer1 = Farmer(user_id=u_farmer1.id, name="Pass Farmer One", phone="9876500101",
+                         district="Ludhiana")
+        farmer2 = Farmer(user_id=u_farmer2.id, name="Pass Farmer Two", phone="9876500102",
+                         district="Patiala")
         db.session.add_all([staff_a, staff_b, staff_none, farmer1, farmer2])
         db.session.commit()
 

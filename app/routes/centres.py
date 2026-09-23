@@ -33,6 +33,8 @@ def _format_centre(c):
         "id": c.id,
         "name": c.name,
         "location": c.location,
+        "district": c.district,
+        "tehsil": c.tehsil,
         "opening_time": format_time_string(c.opening_time),
         "closing_time": format_time_string(c.closing_time),
         "daily_capacity": c.daily_capacity,

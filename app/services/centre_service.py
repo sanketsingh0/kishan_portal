@@ -151,12 +151,21 @@ def create_centre(data: dict) -> Centre:
         is_active = data.get("active", True)
     is_active = bool(is_active)
 
+    district = str(data.get("district") or "").strip() or None
+    if district is not None and len(district) > 100:
+        errors.append("District cannot exceed 100 characters.")
+    tehsil = str(data.get("tehsil") or "").strip() or None
+    if tehsil is not None and len(tehsil) > 100:
+        errors.append("Tehsil cannot exceed 100 characters.")
+
     if errors:
         raise CentreValidationError("Centre creation failed validation.", errors=errors)
 
     centre = Centre(
         name=name,
         location=location,
+        district=district,
+        tehsil=tehsil,
         opening_time=opening_time_val,
         closing_time=closing_time_val,
         daily_capacity=daily_capacity,
@@ -229,6 +238,28 @@ def update_centre(centre_id: int, data: dict) -> Centre:
             errors.append("Location cannot exceed 255 characters.")
         else:
             centre.location = location
+
+    if "district" in data:
+        raw_district = data["district"]
+        if raw_district is None or str(raw_district).strip() == "":
+            centre.district = None
+        else:
+            district = str(raw_district).strip()
+            if len(district) > 100:
+                errors.append("District cannot exceed 100 characters.")
+            else:
+                centre.district = district
+
+    if "tehsil" in data:
+        raw_tehsil = data["tehsil"]
+        if raw_tehsil is None or str(raw_tehsil).strip() == "":
+            centre.tehsil = None
+        else:
+            tehsil = str(raw_tehsil).strip()
+            if len(tehsil) > 100:
+                errors.append("Tehsil cannot exceed 100 characters.")
+            else:
+                centre.tehsil = tehsil
 
     new_opening = parse_time_string(data.get("opening_time")) if "opening_time" in data else centre.opening_time
     new_closing = parse_time_string(data.get("closing_time")) if "closing_time" in data else centre.closing_time

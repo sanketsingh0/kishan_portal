@@ -30,10 +30,16 @@ from app.services.slot_service import (
 slots_bp = Blueprint("slots", __name__, url_prefix="/api/slots")
 
 
-def _format_slot(s):
-    """Serialize Slot instance to clean JSON dictionary."""
+def _format_slot(s, farmer=None):
+    """Serialize Slot instance to clean JSON dictionary.
+
+    When ``farmer`` is provided (farmer-facing responses) the payload also
+    carries the centre's assigned jurisdiction plus the server-computed
+    ``location_eligible`` flag, so the farmer UI can display eligibility
+    without re-implementing the backend rule in JavaScript.
+    """
     active_booked = sum(1 for b in s.bookings if b.status in (BookingStatus.PENDING, BookingStatus.CONFIRMED))
-    return {
+    payload = {
         "id": s.id,
         "centre_id": s.centre_id,
         "centre_name": s.centre.name if s.centre else None,
@@ -47,6 +53,15 @@ def _format_slot(s):
         "remaining_capacity": max(0, s.capacity - active_booked),
         "status": s.status,
     }
+
+    if farmer is not None and s.centre is not None:
+        from app.services.booking_service import is_location_eligible
+
+        payload["centre_district"] = s.centre.district
+        payload["centre_tehsil"] = s.centre.tehsil
+        payload["location_eligible"] = is_location_eligible(farmer, s.centre)
+
+    return payload
 
 
 @slots_bp.route("", methods=["GET"])
@@ -89,6 +104,13 @@ def list_slots():
     # Farmers only see upcoming OPEN slots
     upcoming_only = not is_staff_or_admin
 
+    # Farmer-facing responses carry the server-computed location eligibility flag
+    farmer = None
+    if not is_staff_or_admin:
+        from app.services.farmer_service import get_farmer_by_user_id
+
+        farmer = get_farmer_by_user_id(g.current_user.id)
+
     slots = get_slots(
         centre_id=centre_id,
         crop_id=crop_id,
@@ -97,7 +119,7 @@ def list_slots():
         upcoming_only=upcoming_only,
     )
 
-    return jsonify({"slots": [_format_slot(s) for s in slots]}), 200
+    return jsonify({"slots": [_format_slot(s, farmer=farmer) for s in slots]}), 200
 
 
 @slots_bp.route("/<int:slot_id>", methods=["GET"])
@@ -130,7 +152,13 @@ def get_slot(slot_id: int):
                 "message": "Access denied for this centre.",
             }), 403
 
-    return jsonify({"slot": _format_slot(slot)}), 200
+    farmer = None
+    if not is_staff_or_admin:
+        from app.services.farmer_service import get_farmer_by_user_id
+
+        farmer = get_farmer_by_user_id(g.current_user.id)
+
+    return jsonify({"slot": _format_slot(slot, farmer=farmer)}), 200
 
 
 @slots_bp.route("", methods=["POST"])

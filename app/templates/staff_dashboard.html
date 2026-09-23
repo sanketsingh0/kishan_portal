@@ -228,7 +228,7 @@
       </div>
 
       <!-- Queue Table -->
-      <div class="card-custom p-4">
+      <div class="card-custom p-4 mb-4">
         <div class="d-flex justify-content-between align-items-center mb-3">
           <h5 class="fw-bold mb-0"><i class="fa-solid fa-list-ol me-2 text-success"></i>Procurement Queue</h5>
           <div class="d-flex align-items-center gap-2">
@@ -256,6 +256,36 @@
           </table>
         </div>
       </div>
+
+      <!-- Pending Carry-Forward -->
+      <div class="card-custom p-4 mb-4" id="carryForwardSection">
+        <div class="d-flex justify-content-between align-items-center mb-2 flex-wrap gap-2">
+          <h5 class="fw-bold mb-0"><i class="fa-solid fa-arrow-right-arrow-left me-2 text-warning"></i>Pending Carry-Forward</h5>
+          <div class="d-flex gap-2">
+            <button class="btn btn-sm btn-outline-secondary" onclick="selectAllCarryForward()">Select All Eligible</button>
+            <button class="btn btn-sm btn-warning fw-bold" onclick="openCarryForwardModal()"><i class="fa-solid fa-forward me-1"></i>Carry Forward to Next Day</button>
+          </div>
+        </div>
+        <p class="text-muted small mb-3">Incomplete bookings that were not completed. Select farmers to move them to the next procurement date. Original bookings remain in history.</p>
+        <div class="table-responsive">
+          <table class="table table-hover align-middle">
+            <thead class="table-light">
+              <tr>
+                <th style="width:36px;"><input type="checkbox" id="cfSelectAll" onclick="toggleAllCarryForward(this.checked)" aria-label="Select all"></th>
+                <th>Token</th>
+                <th>Farmer</th>
+                <th>Slot</th>
+                <th>Booking Date</th>
+                <th>Current Status</th>
+                <th>Procurement Status</th>
+              </tr>
+            </thead>
+            <tbody id="carryForwardTableBody">
+              <tr><td colspan="7" class="text-center text-muted py-4">Queue data loads the eligible list.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
     </div>
 
     <!-- Unassigned Centre Container -->
@@ -270,6 +300,47 @@
       </div>
     </div>
 
+  </div>
+
+  <!-- Carry Forward Confirmation Modal -->
+  <div class="modal fade" id="carryForwardModal" tabindex="-1">
+    <div class="modal-dialog modal-dialog-centered">
+      <div class="modal-content border-0 shadow rounded-4">
+        <div class="modal-header border-0 pb-0">
+          <h5 class="modal-title fw-bold text-warning"><i class="fa-solid fa-forward me-2"></i>Carry Forward to Next Day</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <form id="carryForwardForm">
+          <div class="modal-body p-4">
+            <div id="carryForwardModalAlert" class="alert alert-danger d-none"></div>
+            <p class="small text-muted">These bookings will be moved to the next procurement date. The original bookings will remain in history.</p>
+            <div class="mb-2 small"><strong>Selected farmers:</strong> <span id="cfCount">0</span></div>
+            <div class="mb-2 small"><strong>Original date:</strong> <span id="cfSourceDate">--</span></div>
+            <div class="mb-3 small"><strong>Target date:</strong> <input type="date" class="form-control form-control-sm mt-1" id="cfTargetDate" required></div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Reason *</label>
+              <select class="form-select" id="cfReason" required>
+                <option value="">Select a reason</option>
+                <option>Centre closed</option>
+                <option>Procurement delayed</option>
+                <option>Insufficient processing time</option>
+                <option>Operational issue</option>
+                <option>Other</option>
+              </select>
+            </div>
+            <div class="mb-3">
+              <label class="form-label fw-semibold">Target slot (optional)</label>
+              <select class="form-select" id="cfTargetSlot"><option value="">Auto (same time next day)</option></select>
+              <div class="form-text">Leave on Auto unless the default next-day slot is full.</div>
+            </div>
+          </div>
+          <div class="modal-footer border-0 pt-0 px-4 pb-4">
+            <button type="button" class="btn btn-light" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-warning fw-bold">Confirm Carry Forward</button>
+          </div>
+        </form>
+      </div>
+    </div>
   </div>
 
   <!-- Complete Procurement Modal -->
@@ -467,6 +538,8 @@
 
     async function loadCentreQueue() {
       if (!currentCentreId) return;
+      selectedQueueDate = document.getElementById("queueDate").value || selectedQueueDate || getAsiaKolkataDateString();
+      document.getElementById("queueDate").value = selectedQueueDate;
 
       const tbody = document.getElementById("queueTableBody");
       tbody.innerHTML = `<tr><td colspan="6" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading queue...</td></tr>`;
@@ -530,6 +603,118 @@
         tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Network error loading queue.</td></tr>`;
         showAlert("Failed to connect to queue API.", "danger");
       }
+      loadCarryForwardEligible();
+    }
+
+    let carryForwardRows = [];
+    function selectedCarryIds() {
+      return Array.from(document.querySelectorAll(".cf-check:checked")).map(c => parseInt(c.value, 10));
+    }
+    function toggleAllCarryForward(on) {
+      document.querySelectorAll(".cf-check").forEach(c => { c.checked = !!on; });
+    }
+    function selectAllCarryForward() { toggleAllCarryForward(true); }
+    async function loadCarryForwardEligible() {
+      const tbody = document.getElementById("carryForwardTableBody");
+      if (!tbody || !currentCentreId) return;
+      const dateParam = selectedQueueDate || getAsiaKolkataDateString();
+      tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-3"><span class="spinner-border spinner-border-sm me-2"></span>Loading eligible bookings...</td></tr>`;
+      try {
+        const res = await window.KP.authFetch(`/api/staff/carry-forward/eligible?date=${dateParam}`);
+        const data = await res.json();
+        if (!res.ok) {
+          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">${data.message || "Failed to load eligible bookings"}</td></tr>`;
+          return;
+        }
+        carryForwardRows = data.eligible || [];
+        if (carryForwardRows.length === 0) {
+          tbody.innerHTML = `<tr><td colspan="7" class="text-center text-muted py-4">No incomplete bookings eligible for carry-forward on this date.</td></tr>`;
+          return;
+        }
+        tbody.innerHTML = carryForwardRows.map(r => `
+          <tr>
+            <td><input type="checkbox" class="cf-check" value="${r.booking_id}" aria-label="Select booking ${r.booking_id}"></td>
+            <td class="fw-bold text-success">${r.token_number || "--"}</td>
+            <td>${r.farmer_name || "Farmer"}</td>
+            <td>${r.slot_time || "--"}<div class="small text-muted">${r.crop || ""}</div></td>
+            <td>${r.booking_date || "--"}</td>
+            <td><span class="badge bg-warning text-dark">${r.status || ""}</span></td>
+            <td><span class="badge bg-info text-dark">${r.procurement_status || "PENDING"}</span></td>
+          </tr>`).join("");
+      } catch (err) {
+        console.error("Carry-forward load error:", err);
+        tbody.innerHTML = `<tr><td colspan="7" class="text-center text-danger py-3">Network error.</td></tr>`;
+      }
+    }
+    async function openCarryForwardModal() {
+      const ids = selectedCarryIds();
+      const alertEl = document.getElementById("carryForwardModalAlert");
+      alertEl.classList.add("d-none");
+      if (ids.length === 0) {
+        showAlert("Select at least one eligible booking first.", "warning");
+        return;
+      }
+      document.getElementById("cfCount").innerText = ids.length;
+      document.getElementById("cfSourceDate").innerText = selectedQueueDate || "";
+      const d = new Date((selectedQueueDate || getAsiaKolkataDateString()) + "T00:00:00");
+      d.setDate(d.getDate() + 1);
+      document.getElementById("cfTargetDate").value = d.toISOString().split("T")[0];
+      const slotSel = document.getElementById("cfTargetSlot");
+      slotSel.innerHTML = `<option value="">Auto (same time next day)</option>`;
+      try {
+        const tDate = document.getElementById("cfTargetDate").value;
+        const res = await window.KP.authFetch(`/api/slots?centre_id=${currentCentreId}&slot_date=${tDate}&status=OPEN`);
+        const data = await res.json();
+        (data.slots || []).forEach(s => {
+          const o = document.createElement("option");
+          o.value = s.id;
+          o.textContent = `${s.start_time || ""}-${s.end_time || ""} · ${s.crop || s.crop_name || ""} (cap ${s.capacity})`;
+          slotSel.appendChild(o);
+        });
+      } catch (e) { /* optional slot list is best-effort */ }
+      new bootstrap.Modal(document.getElementById("carryForwardModal")).show();
+    }
+    const _cfForm = document.getElementById("carryForwardForm");
+    if (_cfForm && !_cfForm.dataset.bound) {
+      _cfForm.dataset.bound = "1";
+      _cfForm.addEventListener("submit", async function(e) {
+        e.preventDefault();
+        const ids = selectedCarryIds();
+        const alertEl = document.getElementById("carryForwardModalAlert");
+        alertEl.classList.add("d-none");
+        const payload = {
+          booking_ids: ids,
+          target_date: document.getElementById("cfTargetDate").value,
+          reason: document.getElementById("cfReason").value,
+        };
+        const slotVal = document.getElementById("cfTargetSlot").value;
+        if (slotVal) payload.target_slot_id = parseInt(slotVal, 10);
+        try {
+          const res = await window.KP.authFetch("/api/staff/carry-forward", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify(payload),
+          });
+          const data = await res.json();
+          if (!res.ok) {
+            alertEl.innerText = data.messages ? data.messages.join(", ") : (data.message || "Carry-forward failed.");
+            alertEl.classList.remove("d-none");
+            return;
+          }
+          bootstrap.Modal.getInstance(document.getElementById("carryForwardModal")).hide();
+          const okN = data.successful_count || 0;
+          const failN = data.failed_count || 0;
+          const tokens = (data.successful || []).map(s => s.new_token).join(", ");
+          showAlert(`${okN} bookings carried forward to ${data.target_date}.${tokens ? " New tokens: " + tokens + "." : ""}${failN ? " " + failN + " failed." : ""}`, failN ? "warning" : "success");
+          loadCentreQueue();
+        } catch (err) {
+          console.error("Carry-forward error:", err);
+          alertEl.innerText = "Network error carrying bookings forward.";
+          alertEl.classList.remove("d-none");
+        }
+      });
+      document.getElementById("cfTargetDate").addEventListener("change", openCarryRefreshSlots);
+      async function openCarryRefreshSlots() { /* slots reload on reopen */ }
     }
 
     async function startProcessing(bookingId) {

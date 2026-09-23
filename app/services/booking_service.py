@@ -48,18 +48,84 @@ class BookingConflictError(BookingError):
         super().__init__(message, code=code)
 
 
+LOCATION_MISMATCH_MESSAGE = (
+    "Booking not allowed: farmer district/tehsil does not match the centre. "
+    "Farmer district or tehsil must match the centre district or tehsil."
+)
+
+
+def normalize_location(value) -> str | None:
+    """Normalize one location level for exact comparison.
+
+    Trims surrounding whitespace and lowercases. Returns None for
+    missing/empty values so that level simply cannot match.
+    """
+    if value is None:
+        return None
+    if not isinstance(value, str):
+        value = str(value)
+    cleaned = value.strip().lower()
+    return cleaned or None
+
+
+def is_location_eligible(farmer, centre) -> bool:
+    """Return True when farmer tehsil OR district exactly matches centre.
+
+    Exact normalized equality only (no partial/fuzzy matching). If both
+    values for a level are missing that level does not match. Booking is
+    allowed ONLY when normalized tehsil matches OR normalized district
+    matches; when farmer and centre have no usable matching location data
+    the booking is rejected (the legacy both-sides-unconfigured allowance
+    was removed deliberately).
+    """
+    farmer_tehsil = normalize_location(getattr(farmer, "tehsil", None))
+    farmer_district = normalize_location(getattr(farmer, "district", None))
+    centre_tehsil = normalize_location(getattr(centre, "tehsil", None))
+    centre_district = normalize_location(getattr(centre, "district", None))
+    tehsil_match = bool(
+        farmer_tehsil and centre_tehsil and farmer_tehsil == centre_tehsil
+    )
+    district_match = bool(
+        farmer_district and centre_district and farmer_district == centre_district
+    )
+    return tehsil_match or district_match
+
+
+def check_location_eligibility(farmer, centre) -> None:
+    """Enforce farmer booking location rule; raises on mismatch."""
+    if not is_location_eligible(farmer, centre):
+        raise BookingValidationError(
+            LOCATION_MISMATCH_MESSAGE,
+            errors=[LOCATION_MISMATCH_MESSAGE],
+        )
+
+
 def get_active_bookings_count_for_slot(slot_id: int) -> int:
-    """Return total active (PENDING or CONFIRMED) bookings for a given slot."""
-    return Booking.query.filter(
-        Booking.slot_id == slot_id,
-        Booking.status.in_(BookingStatus.active_statuses)
-    ).count()
+    """Return total active (PENDING or CONFIRMED) bookings for a slot.
+
+    Uses a fresh COUNT query that bypasses the session identity map so a
+    capacity change committed by another request/session is always visible.
+    """
+    from sqlalchemy import func
+    count = (
+        db.session.query(func.count(Booking.id))
+        .filter(
+            Booking.slot_id == slot_id,
+            Booking.status.in_(BookingStatus.active_statuses),
+        )
+        .scalar()
+    )
+    return int(count or 0)
 
 
 def get_slot_remaining_capacity(slot: Slot) -> int:
-    """Calculate remaining capacity for a slot."""
+    """Calculate remaining capacity for a slot (fresh read, no stale ORM)."""
+    fresh_capacity = db.session.query(Slot.capacity).filter(
+        Slot.id == slot.id).scalar()
+    if fresh_capacity is None:
+        return 0
     booked_count = get_active_bookings_count_for_slot(slot.id)
-    return max(0, slot.capacity - booked_count)
+    return max(0, int(fresh_capacity) - booked_count)
 
 
 def generate_token_for_booking(slot: Slot) -> tuple[str, datetime]:
@@ -137,6 +203,11 @@ def create_booking(user_id: int, slot_id: int) -> Booking:
     # 4. Active Centre check
     if not slot.centre or not slot.centre.is_active:
         raise BookingValidationError("Procurement centre is inactive or unavailable.")
+
+    # 4b. Farmer location eligibility (FARMER bookings only):
+    # farmer tehsil == centre tehsil OR farmer district == centre district
+    # (normalized exact match). Uses authenticated farmer + slot's centre.
+    check_location_eligibility(farmer, slot.centre)
 
     # 5. Active Crop check
     if not slot.crop or not slot.crop.is_active:

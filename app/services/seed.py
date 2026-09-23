@@ -16,6 +16,8 @@ DEMO_CENTRES = (
     {
         "name": "KisanProcure Demo Mandi - Block A",
         "location": "Demo Sector 1, Demo District (fictional data)",
+        "district": "Demo District",
+        "tehsil": "Demo Tehsil A",
         "opening_time": time(8, 0),
         "closing_time": time(17, 0),
         "daily_capacity": 200,
@@ -25,6 +27,8 @@ DEMO_CENTRES = (
     {
         "name": "KisanProcure Demo Mandi - Block B",
         "location": "Demo Sector 2, Demo District (fictional data)",
+        "district": "Demo District",
+        "tehsil": "Demo Tehsil B",
         "opening_time": time(9, 0),
         "closing_time": time(18, 0),
         "daily_capacity": 150,
@@ -34,6 +38,8 @@ DEMO_CENTRES = (
     {
         "name": "KisanProcure Demo Mandi - Riverside",
         "location": "Demo Township, Demo District (fictional data)",
+        "district": "Demo District",
+        "tehsil": "Demo Tehsil Riverside",
         "opening_time": time(7, 30),
         "closing_time": time(16, 30),
         "daily_capacity": 250,

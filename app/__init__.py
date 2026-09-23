@@ -78,6 +78,7 @@ def create_app(config_name: str | None = None) -> Flask:
     from app.routes.notifications import notifications_bp
     from app.routes.admin import admin_bp
     from app.routes.staff import staff_bp
+    from app.routes.carry_forward import carry_forward_bp
     from app.routes.public import public_bp
 
     app.register_blueprint(health_bp)
@@ -96,6 +97,7 @@ def create_app(config_name: str | None = None) -> Flask:
     app.register_blueprint(notifications_bp)
     app.register_blueprint(admin_bp)
     app.register_blueprint(staff_bp)
+    app.register_blueprint(carry_forward_bp)
     app.register_blueprint(public_bp)
 
     # --- Security Headers & Response Controls ------------------------------

@@ -35,6 +35,7 @@ def realtime_test_data(app):
         centre = Centre(
             name="Realtime Mandi",
             location="City RT",
+            district="City RT",
             opening_time=time(8, 0),
             closing_time=time(18, 0),
             daily_capacity=100,
@@ -60,8 +61,10 @@ def realtime_test_data(app):
         db.session.commit()
 
         # 4. Farmers
-        f1 = Farmer(user_id=u1.id, name="Farmer One RT", phone="9990000001", city="City 1", state="State 1")
-        f2 = Farmer(user_id=u2.id, name="Farmer Two RT", phone="9990000002", city="City 2", state="State 2")
+        f1 = Farmer(user_id=u1.id, name="Farmer One RT", phone="9990000001", city="City 1", state="State 1",
+                    district="City RT")
+        f2 = Farmer(user_id=u2.id, name="Farmer Two RT", phone="9990000002", city="City 2", state="State 2",
+                    district="City RT")
         db.session.add_all([f1, f2])
         db.session.commit()
 

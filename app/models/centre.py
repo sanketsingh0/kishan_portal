@@ -16,6 +16,9 @@ class Centre(TimestampMixin, db.Model):
     id = db.Column(db.Integer, primary_key=True)
     name = db.Column(db.String(150), nullable=False, unique=True)
     location = db.Column(db.String(255), nullable=False)
+    # Centre assigned jurisdiction used for farmer eligibility (tehsil OR district).
+    district = db.Column(db.String(100), nullable=True)
+    tehsil = db.Column(db.String(100), nullable=True)
     opening_time = db.Column(db.Time, nullable=True)
     closing_time = db.Column(db.Time, nullable=True)
     daily_capacity = db.Column(db.Integer, nullable=False, default=0)

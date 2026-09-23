@@ -209,10 +209,22 @@
                 <div class="detail-label">State</div>
                 <div class="detail-value" id="profileState">--</div>
               </div>
+              <div class="col-6 mb-2">
+                <div class="detail-label">District</div>
+                <div class="detail-value" id="profileDistrict">--</div>
+              </div>
+              <div class="col-6 mb-2">
+                <div class="detail-label">Tehsil</div>
+                <div class="detail-value" id="profileTehsil">--</div>
+              </div>
               <div class="col-12 mt-2">
                 <div class="detail-label">Pincode</div>
                 <div class="detail-value" id="profilePincode">--</div>
               </div>
+            </div>
+            <div class="alert alert-light border rounded-3 mt-3 mb-0 py-2 px-3 extra-small text-secondary">
+              <i class="fa-solid fa-circle-info me-1 text-success"></i>
+              Slot booking is allowed only at procurement centres whose <strong>district or tehsil</strong> matches your district or tehsil.
             </div>
           </div>
         </div>
@@ -279,6 +291,10 @@
                 <span class="detail-label">Centre</span>
                 <div class="fw-bold text-dark" id="modalCentreName">--</div>
               </div>
+              <div class="col-12">
+                <span class="detail-label">Centre District / Tehsil</span>
+                <div class="fw-bold text-dark" id="modalCentreZone">--</div>
+              </div>
               <div class="col-6">
                 <span class="detail-label">Crop</span>
                 <div class="fw-bold text-success" id="modalCropName">--</div>
@@ -301,6 +317,10 @@
           <p class="text-muted small mb-0">
             <i class="fa-solid fa-circle-info me-1 text-primary"></i>
             Token generation will be processed in the next stage after booking confirmation.
+          </p>
+          <p class="text-muted extra-small mb-0 mt-1">
+            <i class="fa-solid fa-location-dot me-1 text-success"></i>
+            Booking is allowed only when your district or tehsil matches the centre's district or tehsil.
           </p>
         </div>
         <div class="modal-footer border-0 pt-0 px-4 pb-4">
@@ -353,6 +373,20 @@
                 <label for="inputState" class="form-label fw-semibold">State</label>
                 <input type="text" class="form-control rounded-3" id="inputState" maxlength="100">
               </div>
+            </div>
+
+            <div class="row">
+              <div class="col-md-6 mb-3">
+                <label for="inputDistrict" class="form-label fw-semibold">District</label>
+                <input type="text" class="form-control rounded-3" id="inputDistrict" maxlength="100" placeholder="e.g. Mirzapur">
+              </div>
+              <div class="col-md-6 mb-3">
+                <label for="inputTehsil" class="form-label fw-semibold">Tehsil</label>
+                <input type="text" class="form-control rounded-3" id="inputTehsil" maxlength="100" placeholder="e.g. Mirzapur Sadar">
+              </div>
+            </div>
+            <div class="form-text mb-3">
+              Centre eligibility: your district or tehsil must match the centre's district or tehsil.
             </div>
 
             <div class="mb-3">
@@ -412,6 +446,8 @@
         document.getElementById("profileAddress").innerText = farmer.address || "--";
         document.getElementById("profileCity").innerText = farmer.city || "--";
         document.getElementById("profileState").innerText = farmer.state || "--";
+        document.getElementById("profileDistrict").innerText = farmer.district || "--";
+        document.getElementById("profileTehsil").innerText = farmer.tehsil || "--";
         document.getElementById("profilePincode").innerText = farmer.pincode || "--";
 
         // Pre-fill modal
@@ -420,6 +456,8 @@
         document.getElementById("inputAddress").value = farmer.address || "";
         document.getElementById("inputCity").value = farmer.city || "";
         document.getElementById("inputState").value = farmer.state || "";
+        document.getElementById("inputDistrict").value = farmer.district || "";
+        document.getElementById("inputTehsil").value = farmer.tehsil || "";
         document.getElementById("inputPincode").value = farmer.pincode || "";
 
       } catch (err) {
@@ -440,6 +478,8 @@
         address: document.getElementById("inputAddress").value.trim() || null,
         city: document.getElementById("inputCity").value.trim() || null,
         state: document.getElementById("inputState").value.trim() || null,
+        district: document.getElementById("inputDistrict").value.trim() || null,
+        tehsil: document.getElementById("inputTehsil").value.trim() || null,
         pincode: document.getElementById("inputPincode").value.trim() || null,
       };
 
@@ -489,13 +529,26 @@
 
         container.innerHTML = data.slots.map(s => {
           const isFull = s.remaining_capacity <= 0;
+          // Backend-computed eligibility (server is the source of truth).
+          const isEligible = s.location_eligible !== false;
+          const centreZone = [s.centre_tehsil, s.centre_district].filter(Boolean).join(", ");
+          const badge = !isEligible
+            ? '<span class="badge bg-secondary">NOT ELIGIBLE</span>'
+            : `<span class="badge ${isFull ? 'bg-danger' : 'bg-success'}">${isFull ? 'FULL' : 'OPEN'}</span>`;
+          const button = !isEligible
+            ? `<button class="btn btn-sm btn-outline-secondary w-100" disabled>
+                 <i class="fa-solid fa-location-crosshairs me-1"></i>Not Eligible
+               </button>`
+            : `<button class="btn btn-sm ${isFull ? 'btn-secondary' : 'btn-kp-primary'} w-100" ${isFull ? 'disabled' : ''} onclick="openBookingModal(${s.id})">
+                 <i class="fa-solid ${isFull ? 'fa-ban' : 'fa-plus-circle'} me-1"></i>${isFull ? 'Slot Full' : 'Book Slot'}
+               </button>`;
           return `
             <div class="col-md-6">
               <div class="p-3 border rounded-3 bg-white h-100 shadow-sm d-flex flex-column justify-content-between">
                 <div>
                   <div class="d-flex justify-content-between align-items-center mb-1">
                     <span class="fw-bold text-success"><i class="fa-solid fa-wheat-awn me-1"></i>${s.crop_name}</span>
-                    <span class="badge ${isFull ? 'bg-danger' : 'bg-success'}">${isFull ? 'FULL' : 'OPEN'}</span>
+                    ${badge}
                   </div>
                   <div class="small fw-semibold text-dark mb-1"><i class="fa-solid fa-location-dot me-1 text-muted"></i>${s.centre_name}</div>
                   <div class="text-muted small mb-2"><i class="fa-solid fa-calendar me-1"></i>${s.slot_date} (${s.start_time} - ${s.end_time})</div>
@@ -503,10 +556,11 @@
                     <span>Capacity: <strong>${s.capacity}</strong></span>
                     <span>Remaining: <strong class="${isFull ? 'text-danger' : 'text-success'}">${s.remaining_capacity}</strong></span>
                   </div>
+                  ${!isEligible ? `<div class="alert alert-light border rounded-3 extra-small text-secondary mb-3 py-2 px-2">
+                        <i class="fa-solid fa-circle-info me-1"></i>Your district or tehsil must match this centre${centreZone ? ` (${centreZone})` : ''}.
+                      </div>` : ''}
                 </div>
-                <button class="btn btn-sm ${isFull ? 'btn-secondary' : 'btn-kp-primary'} w-100" ${isFull ? 'disabled' : ''} onclick="openBookingModal(${s.id})">
-                  <i class="fa-solid ${isFull ? 'fa-ban' : 'fa-plus-circle'} me-1"></i>${isFull ? 'Slot Full' : 'Book Slot'}
-                </button>
+                ${button}
               </div>
             </div>
           `;
@@ -525,6 +579,9 @@
 
       selectedSlotForBooking = slot;
       document.getElementById("bookingModalAlert").classList.add("d-none");
+      const zone = [slot.centre_tehsil, slot.centre_district].filter(Boolean).join(", ");
+      const zoneBadge = document.getElementById("modalCentreZone");
+      if (zoneBadge) zoneBadge.innerText = zone || "--";
       document.getElementById("modalCentreName").innerText = slot.centre_name || "--";
       document.getElementById("modalCropName").innerText = slot.crop_name || "--";
       document.getElementById("modalSlotDate").innerText = slot.slot_date || "--";
