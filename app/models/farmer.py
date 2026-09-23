@@ -24,6 +24,9 @@ class Farmer(TimestampMixin, db.Model):
     city = db.Column(db.String(100), nullable=True)
     state = db.Column(db.String(100), nullable=True)
     pincode = db.Column(db.String(10), nullable=True)
+    # Farmer home location used for centre eligibility (tehsil OR district match).
+    district = db.Column(db.String(100), nullable=True)
+    tehsil = db.Column(db.String(100), nullable=True)
 
     user = db.relationship("User", back_populates="farmer")
 
