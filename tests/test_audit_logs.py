@@ -153,6 +153,8 @@ def test_automatic_audit_triggers_on_admin_actions(app, audit_users):
         c = create_centre({
             "name": "Audit Test Centre",
             "location": "Jalandhar",
+            "district": "Jalandhar",
+            "tehsil": "Jalandhar West",
             "opening_time": "09:00",
             "closing_time": "17:00",
             "daily_capacity": 50,

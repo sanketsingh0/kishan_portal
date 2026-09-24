@@ -134,6 +134,8 @@
                   <th>ID</th>
                   <th>Name</th>
                   <th>Location</th>
+                  <th>District</th>
+                  <th>Tehsil</th>
                   <th>Hours</th>
                   <th>Daily Cap.</th>
                   <th>Avg. Proc.</th>
@@ -142,7 +144,7 @@
                 </tr>
               </thead>
               <tbody id="centresTableBody">
-                <tr><td colspan="8" class="text-center text-muted py-4">Loading centres...</td></tr>
+                <tr><td colspan="10" class="text-center text-muted py-4">Loading centres...</td></tr>
               </tbody>
             </table>
           </div>
@@ -263,6 +265,16 @@
             <div class="mb-3">
               <label class="form-label fw-semibold">Location *</label>
               <input type="text" class="form-control" id="centreLocation" required maxlength="255">
+            </div>
+            <div class="row">
+              <div class="col-6 mb-3">
+                <label class="form-label fw-semibold">District *</label>
+                <input type="text" class="form-control" id="centreDistrict" required maxlength="100">
+              </div>
+              <div class="col-6 mb-3">
+                <label class="form-label fw-semibold">Tehsil *</label>
+                <input type="text" class="form-control" id="centreTehsil" required maxlength="100">
+              </div>
             </div>
             <div class="row">
               <div class="col-6 mb-3">
@@ -441,12 +453,12 @@
         const tbody = document.getElementById("centresTableBody");
 
         if (!res.ok) {
-          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger">${data.message || 'Error loading centres'}</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger">${data.message || 'Error loading centres'}</td></tr>`;
           return;
         }
 
         if (data.centres.length === 0) {
-          tbody.innerHTML = `<tr><td colspan="8" class="text-center text-muted py-4">No centres found.</td></tr>`;
+          tbody.innerHTML = `<tr><td colspan="10" class="text-center text-muted py-4">No centres found.</td></tr>`;
           return;
         }
 
@@ -455,6 +467,8 @@
             <td>${c.id}</td>
             <td class="fw-bold">${c.name}</td>
             <td>${c.location}</td>
+            <td>${c.district || '--'}</td>
+            <td>${c.tehsil || '--'}</td>
             <td>${c.opening_time || '--'} - ${c.closing_time || '--'}</td>
             <td>${c.daily_capacity}</td>
             <td>${c.average_processing_minutes} min</td>
@@ -479,7 +493,7 @@
         console.error(err);
         const centreTbody = document.getElementById("centresTableBody");
         if (centreTbody) {
-          centreTbody.innerHTML = `<tr><td colspan="8" class="text-center text-danger py-4"><i class="fa-solid fa-circle-exclamation me-2"></i>Unable to load centres. Please try again.<br><small class="text-muted">${err && err.message ? err.message : String(err)}</small></td></tr>`;
+          centreTbody.innerHTML = `<tr><td colspan="10" class="text-center text-danger py-4"><i class="fa-solid fa-circle-exclamation me-2"></i>Unable to load centres. Please try again.<br><small class="text-muted">${err && err.message ? err.message : String(err)}</small></td></tr>`;
         }
       }
     }
@@ -547,6 +561,8 @@
       document.getElementById("centreModalTitle").innerText = "Edit Procurement Centre";
       document.getElementById("centreName").value = c.name;
       document.getElementById("centreLocation").value = c.location;
+      document.getElementById("centreDistrict").value = c.district || "";
+      document.getElementById("centreTehsil").value = c.tehsil || "";
       document.getElementById("centreOpening").value = c.opening_time || "09:00";
       document.getElementById("centreClosing").value = c.closing_time || "17:00";
       document.getElementById("centreCapacity").value = c.daily_capacity;
@@ -582,6 +598,8 @@
       const payload = {
         name: document.getElementById("centreName").value.trim(),
         location: document.getElementById("centreLocation").value.trim(),
+        district: document.getElementById("centreDistrict").value.trim(),
+        tehsil: document.getElementById("centreTehsil").value.trim(),
         opening_time: document.getElementById("centreOpening").value,
         closing_time: document.getElementById("centreClosing").value,
         daily_capacity: parseInt(document.getElementById("centreCapacity").value, 10),

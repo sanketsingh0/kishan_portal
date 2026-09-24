@@ -279,6 +279,10 @@ class TestAddCentreButtonAndForm:
         assert 'id="centreAvgProc"' in html
         # Active/status checkbox
         assert 'id="centreActive"' in html
+        # District field (farmer location eligibility)
+        assert 'id="centreDistrict"' in html
+        # Tehsil field (farmer location eligibility)
+        assert 'id="centreTehsil"' in html
 
     def test_centre_form_has_hidden_id_field(self, client):
         """The centre form must have a hidden centreId field for edit mode."""
@@ -286,6 +290,33 @@ class TestAddCentreButtonAndForm:
         assert resp.status_code == 200
         html = resp.data.decode("utf-8")
         assert 'id="centreId"' in html
+
+    def test_centre_submit_payload_includes_district_tehsil(self, client):
+        """The centre form submit handler must send district + tehsil to the API."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'district: document.getElementById("centreDistrict").value.trim()' in html
+        assert 'tehsil: document.getElementById("centreTehsil").value.trim()' in html
+
+    def test_openEditCentreModal_prefills_district_tehsil(self, client):
+        """Editing a centre must pre-fill district/tehsil from the record."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert 'document.getElementById("centreDistrict").value = c.district' in html
+        assert 'document.getElementById("centreTehsil").value = c.tehsil' in html
+
+    def test_centre_table_has_district_tehsil_columns(self, client):
+        """The Admin centre table must display District and Tehsil columns."""
+        resp = client.get("/admin/management")
+        assert resp.status_code == 200
+        html = resp.data.decode("utf-8")
+        assert "<th>District</th>" in html
+        assert "<th>Tehsil</th>" in html
+        # Rows render the values (fall back to '--' for legacy NULL records)
+        assert "${c.district || '--'}" in html
+        assert "${c.tehsil || '--'}" in html
 
     def test_centre_submit_button_exists(self, client):
         """The centre form must have a submit button."""

@@ -96,8 +96,10 @@ def create_centre(data: dict) -> Centre:
     """Create a new procurement centre.
 
     Args:
-        data: Dictionary with name, location, opening_time, closing_time,
-              daily_capacity, average_processing_minutes, is_active.
+        data: Dictionary with name, location, district, tehsil, opening_time,
+              closing_time, daily_capacity, average_processing_minutes,
+              is_active.  ``district`` and ``tehsil`` are required because
+              farmer booking location eligibility depends on them.
 
     Returns:
         Created Centre instance.
@@ -151,11 +153,16 @@ def create_centre(data: dict) -> Centre:
         is_active = data.get("active", True)
     is_active = bool(is_active)
 
-    district = str(data.get("district") or "").strip() or None
-    if district is not None and len(district) > 100:
+    district = str(data.get("district") or "").strip()
+    if not district:
+        errors.append("District is required.")
+    elif len(district) > 100:
         errors.append("District cannot exceed 100 characters.")
-    tehsil = str(data.get("tehsil") or "").strip() or None
-    if tehsil is not None and len(tehsil) > 100:
+
+    tehsil = str(data.get("tehsil") or "").strip()
+    if not tehsil:
+        errors.append("Tehsil is required.")
+    elif len(tehsil) > 100:
         errors.append("Tehsil cannot exceed 100 characters.")
 
     if errors:
@@ -200,7 +207,9 @@ def update_centre(centre_id: int, data: dict) -> Centre:
 
     Args:
         centre_id: Database ID of centre to update.
-        data: Dictionary of fields to update.
+        data: Dictionary of fields to update.  When ``district``/``tehsil``
+              are present they must be non-empty (trimmed) strings; omitting
+              the keys leaves the stored values untouched.
 
     Returns:
         Updated Centre instance.
@@ -241,25 +250,23 @@ def update_centre(centre_id: int, data: dict) -> Centre:
 
     if "district" in data:
         raw_district = data["district"]
-        if raw_district is None or str(raw_district).strip() == "":
-            centre.district = None
+        district = str(raw_district).strip() if raw_district is not None else ""
+        if not district:
+            errors.append("District cannot be empty.")
+        elif len(district) > 100:
+            errors.append("District cannot exceed 100 characters.")
         else:
-            district = str(raw_district).strip()
-            if len(district) > 100:
-                errors.append("District cannot exceed 100 characters.")
-            else:
-                centre.district = district
+            centre.district = district
 
     if "tehsil" in data:
         raw_tehsil = data["tehsil"]
-        if raw_tehsil is None or str(raw_tehsil).strip() == "":
-            centre.tehsil = None
+        tehsil = str(raw_tehsil).strip() if raw_tehsil is not None else ""
+        if not tehsil:
+            errors.append("Tehsil cannot be empty.")
+        elif len(tehsil) > 100:
+            errors.append("Tehsil cannot exceed 100 characters.")
         else:
-            tehsil = str(raw_tehsil).strip()
-            if len(tehsil) > 100:
-                errors.append("Tehsil cannot exceed 100 characters.")
-            else:
-                centre.tehsil = tehsil
+            centre.tehsil = tehsil
 
     new_opening = parse_time_string(data.get("opening_time")) if "opening_time" in data else centre.opening_time
     new_closing = parse_time_string(data.get("closing_time")) if "closing_time" in data else centre.closing_time

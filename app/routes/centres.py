@@ -91,7 +91,10 @@ def add_centre():
     """Create a new procurement centre (ADMIN only).
 
     Request JSON:
-        { name, location, opening_time, closing_time, daily_capacity, average_processing_minutes }
+        { name, location, district, tehsil, opening_time, closing_time,
+          daily_capacity, average_processing_minutes }
+
+    ``district`` and ``tehsil`` are required (booking location eligibility).
 
     Returns:
         201 Created: { message, centre }

@@ -731,6 +731,27 @@ class TestStaffAdminAndQueuePassUnaffected:
         assert all("location_eligible" not in s
                    for s in staff_resp.get_json()["slots"])
 
+    def test_null_centre_location_fields_do_not_break_slot_apis(self, client, app, loc):
+        """J: legacy centres with NULL district/tehsil must not crash /api/slots."""
+        with app.app_context():
+            legacy_centre = add_centre(district=None, tehsil=None)
+            crop = db.session.get(Crop, loc["crop_id"])
+            legacy_slot = add_slot(legacy_centre, crop, hour=10,
+                                   slot_date=date.today() + timedelta(days=5))
+            db.session.commit()
+            legacy_slot_id = legacy_slot.id
+        add_farmer("loc-j-farmer", district="Mirzapur", tehsil="Mirzapur Sadar")
+        db.session.commit()
+
+        resp = call_api(client, "loc-j-farmer", "GET", "/api/slots")
+        assert resp.status_code == 200, resp.get_json()
+        rows = [s for s in resp.get_json()["slots"] if s["id"] == legacy_slot_id]
+        assert rows, "legacy slot missing from farmer catalogue"
+        assert rows[0]["centre_district"] is None
+        assert rows[0]["centre_tehsil"] is None
+        # Nothing to match against => ineligible, but the payload serialises fine.
+        assert rows[0]["location_eligible"] is False
+
 
 
 

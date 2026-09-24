@@ -109,6 +109,32 @@ def test_public_centres_empty(client):
     assert resp.status_code == 200 and resp.get_json()["centres"] == []
 
 
+def test_public_centres_include_district_tehsil(client):
+    """Public centre payloads carry the jurisdiction used for eligibility."""
+    c = Centre(name="Zila Mandi", location="Loc", district="Mirzapur",
+               tehsil="Mirzapur Sadar", daily_capacity=100, is_active=True)
+    db.session.add(c)
+    db.session.commit()
+    resp = client.get("/api/public/centres")
+    assert resp.status_code == 200
+    row = next(r for r in resp.get_json()["centres"] if r["name"] == "Zila Mandi")
+    assert row["district"] == "Mirzapur"
+    assert row["tehsil"] == "Mirzapur Sadar"
+
+
+def test_public_centres_null_district_tehsil_do_not_crash(client):
+    """Legacy centres with NULL location fields serialise as null, not a 500."""
+    c = Centre(name="Legacy Mandi", location="Loc", daily_capacity=100,
+               is_active=True)
+    db.session.add(c)
+    db.session.commit()
+    resp = client.get("/api/public/centres")
+    assert resp.status_code == 200
+    row = next(r for r in resp.get_json()["centres"] if r["name"] == "Legacy Mandi")
+    assert row["district"] is None
+    assert row["tehsil"] is None
+
+
 def test_public_slots_no_auth(client):
     centre = Centre(name="Slot Mandi", location="Loc", daily_capacity=100, is_active=True)
     crop = Crop(name="Wheat", category="Cereal", is_active=True)
@@ -124,6 +150,30 @@ def test_public_slots_no_auth(client):
     assert resp.status_code == 200
     data = resp.get_json()["slots"]
     assert len(data) >= 1 and data[0]["centre_name"] == "Slot Mandi"
+    # Centre jurisdiction is part of the public slot contract.
+    assert "centre_district" in data[0]
+    assert "centre_tehsil" in data[0]
+
+
+def test_public_slots_null_centre_location_do_not_crash(client):
+    """Slots at legacy NULL-location centres still serialise (requirement J)."""
+    centre = Centre(name="Null Loc Mandi", location="Loc", daily_capacity=100,
+                    is_active=True)
+    crop = Crop(name="Wheat", category="Cereal", is_active=True)
+    db.session.add_all([centre, crop])
+    db.session.flush()
+    slot = Slot(centre_id=centre.id, crop_id=crop.id,
+                slot_date=date.today()+timedelta(days=1),
+                start_time=time(9,0), end_time=time(12,0),
+                capacity=20, status=SlotStatus.OPEN)
+    db.session.add(slot)
+    db.session.commit()
+    resp = client.get("/api/public/slots")
+    assert resp.status_code == 200
+    row = next(s for s in resp.get_json()["slots"]
+               if s["centre_name"] == "Null Loc Mandi")
+    assert row["centre_district"] is None
+    assert row["centre_tehsil"] is None
 
 
 def test_public_slots_excludes_non_open(client):
